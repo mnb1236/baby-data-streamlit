@@ -12,7 +12,7 @@ import matplotlib.pyplot as plt
 import seaborn as sns
 import os
 
-# ========== 修复3：解决matplotlib中文乱码（云端Linux适配） ==========
+# 全局设置，消除警告+解决中文乱码
 warnings.filterwarnings("ignore")
 os.environ["PYTHONIOENCODING"] = "utf-8"
 plt.rcParams['font.sans-serif'] = ['WenQuanYi Zen Hei']
@@ -20,7 +20,7 @@ plt.rcParams['axes.unicode_minus'] = False
 
 st.set_page_config(page_title="母婴电商销售数据可视化分析平台", page_icon="📊", layout="wide")
 
-# 自定义样式优化
+# 自定义CSS美化
 st.markdown("""
 <style>
 .main {background-color: #f7f9fc;}
@@ -34,7 +34,6 @@ iframe {width:100% !important;}
 .stDataFrame {border-radius: 8px; overflow: hidden;}
 </style>
 """, unsafe_allow_html=True)
-
 
 # 会话状态初始化
 def init_session_state():
@@ -56,12 +55,10 @@ def init_session_state():
         if key not in st.session_state:
             st.session_state[key] = val
 
-
 init_session_state()
 state = st.session_state
 
-
-# 全局筛选变更处理
+# 筛选刷新事件
 def on_filter_change():
     if "price_key" in st.session_state:
         state.sel_price_range = st.session_state["price_key"]
@@ -76,7 +73,6 @@ def on_filter_change():
     state.filter_df_cache = None
     state.cache_timestamp = datetime.now()
 
-
 # 图表初始化
 def chart_init(height=480, theme=ThemeType.MACARONS):
     return opts.InitOpts(
@@ -86,7 +82,6 @@ def chart_init(height=480, theme=ThemeType.MACARONS):
         theme=theme,
         renderer="canvas"
     )
-
 
 # 图表全局配置
 def chart_config(title_name, min_y=None, max_y=None, min_x=None, max_x=None, zoom=True):
@@ -134,7 +129,6 @@ def chart_config(title_name, min_y=None, max_y=None, min_x=None, max_x=None, zoo
         ]
     return cfg
 
-
 # Excel导出
 def export_excel(sheet_dict):
     output = io.BytesIO()
@@ -146,16 +140,13 @@ def export_excel(sheet_dict):
         output.seek(0)
         return output.getvalue()
     except Exception as e:
-        st.info(f"Excel导出：{str(e)}")
+        st.info(f"导出提示：{str(e)}")
         return None
 
-
-# 金额区间划分
+# 金额区间函数
 def amount_range(val):
     val = float(val)
-    if val < 0:
-        return "无效金额"
-    elif val <= 50:
+    if val <= 50:
         return "0-50元"
     elif val <= 100:
         return "50-100元"
@@ -166,8 +157,7 @@ def amount_range(val):
     else:
         return "500元以上"
 
-
-# IQR异常值检测
+# 异常值检测
 def iqr_outlier(series):
     if series.empty or series.nunique() <= 1:
         return pd.Series([False] * len(series)), 0, 0
@@ -178,8 +168,7 @@ def iqr_outlier(series):
     outlier_mask = (series < lower_bound) | (series > upper_bound)
     return outlier_mask, lower_bound, upper_bound
 
-
-# ========== 修复1：freq="H" → 小写"h"，消除报错；无文件只info不抛error ==========
+# 数据加载函数（无报错兜底）
 @st.cache_data(show_spinner="正在加载并清洗数据...", ttl=3600)
 def load_data(uploaded_file=None):
     logs = []
@@ -187,10 +176,8 @@ def load_data(uploaded_file=None):
         if uploaded_file is not None:
             raw = pd.read_excel(uploaded_file, engine="openpyxl")
         else:
-            st.info("未上传数据文件，使用示例数据演示功能")
-            # freq="h" 小写，彻底解决KeyError('H')报错
+            st.info("未上传数据文件，自动加载示例演示数据")
             dates = pd.date_range(start="2023-01-01", end="2023-12-31", freq="h")[:1000]
-            # 修复2：严格匹配Pyecharts地图省份名称（不带“市”，保证地图数据不为0）
             provinces = ["北京", "上海", "广东", "江苏", "浙江", "山东", "四川", "湖北", "河南", "河北"]
             raw = pd.DataFrame({
                 "Date": dates,
@@ -201,7 +188,6 @@ def load_data(uploaded_file=None):
             })
 
         logs.append(f"【原始数据】总行数：{raw.shape[0]}，总列数：{raw.shape[1]}")
-
         df = raw.drop_duplicates()
         dup_count = raw.shape[0] - df.shape[0]
         logs.append(f"【重复值】删除{dup_count}条，剩余{df.shape[0]}行")
@@ -210,11 +196,9 @@ def load_data(uploaded_file=None):
         obj_cols = df.select_dtypes(include=["object"]).columns
         df[num_cols] = df[num_cols].fillna(0)
         df[obj_cols] = df[obj_cols].fillna("未知")
-        logs.append(f"【缺失值】数值列填充0，文本列填充'未知'")
 
         df["district"] = df["district"].str.strip()
         df["省份标准化"] = df["district"]
-        logs.append(f"【省份标准化】直接沿用行政区名称")
 
         df["日期"] = pd.to_datetime(df["Date"], errors="coerce")
         date_err = df["日期"].isna().sum()
@@ -226,64 +210,61 @@ def load_data(uploaded_file=None):
             inplace=True
         )
 
-        if "买家实际支付金额" in df.columns and not df["买家实际支付金额"].empty:
+        if not df["买家实际支付金额"].empty:
             mask, low, high = iqr_outlier(df["买家实际支付金额"])
             df = df[~mask]
-            logs.append(f"【异常值】阈值[{low:.2f},{high:.2f}]，剔除{mask.sum()}条异常订单")
+            logs.append(f"【异常值】剔除{mask.sum()}条异常订单")
 
         df["小时"] = df["日期"].dt.hour
-        df["星期名称"] = df["日期"].dt.weekday.map(
-            {0: '周一', 1: '周二', 2: '周三', 3: '周四', 4: '周五', 5: '周六', 6: '周日'})
+        df["星期名称"] = df["日期"].dt.weekday.map({0: '周一', 1: '周二', 2: '周三', 3: '周四', 4: '周五', 5: '周六', 6: '周日'})
         df["金额区间"] = df["买家实际支付金额"].apply(amount_range)
         df["退款金额"] = 0
-        logs.append(f"【衍生字段】新增小时、星期名称、金额区间、退款金额字段")
-
         logs.append(f"【清洗完成】最终有效数据：{df.shape[0]}行")
         return raw, df, logs
-
     except Exception as e:
-        logs.append(f"【信息】{str(e)}")
+        logs.append(f"数据加载信息：{str(e)}")
         return pd.DataFrame(), pd.DataFrame(), logs
 
-
-# 侧边栏文件上传
+# ---------------------- 侧边栏文件上传 ----------------------
 st.sidebar.header("📤 数据文件上传")
 uploaded_file = st.sidebar.file_uploader(
     "上传Excel数据文件（.xlsx）",
     type=["xlsx"],
-    help="上传包含母婴电商数据的Excel文件，字段需包含：Date、district、buy_mount、Total、user_id"
+    help="字段要求：Date、district、buy_mount、Total、user_id"
 )
 
-# 加载数据：不再弹出红色错误警告
+# 加载数据
 RAW, CLEAN, LOGS = load_data(uploaded_file)
 state.raw_df, state.clean_df, state.preprocess_log = RAW, CLEAN, LOGS
-
-# 初始化筛选值
 df = CLEAN
-if df.empty:
-    df = pd.DataFrame()
-else:
-    if state.start_date is None:
-        state.start_date = df["日期"].min().date()
-    if state.end_date is None:
-        state.end_date = df["日期"].max().date()
 
+# ---------------------- 日期空值兜底（解决date_input爆红） ----------------------
+if not df.empty:
+    min_dt = df["日期"].min().date()
+    max_dt = df["日期"].max().date()
+    if state.start_date is None:
+        state.start_date = min_dt
+    if state.end_date is None:
+        state.end_date = max_dt
+    # 省份初始化
     all_prov_list = sorted(df["省份标准化"].unique())
     if len(state.sel_prov) == 0:
         state.sel_prov = all_prov_list
-
+    # 金额区间初始化
     if state.min_p == 0.0 and state.max_p == 99999.0:
         state.min_p = float(df["买家实际支付金额"].min())
         state.max_p = float(df["买家实际支付金额"].max())
+else:
+    # 空数据时给默认日期，防止控件报错
+    state.start_date = date(2023, 1, 1)
+    state.end_date = date(2023, 12, 31)
 
-
-# 筛选数据
+# 筛选函数
 def get_filtered_df():
     if state.filter_df_cache is not None:
         return state.filter_df_cache
     if df.empty:
-        return df
-
+        return pd.DataFrame()
     filter_conditions = [
         df["金额区间"].isin(state.sel_price_range),
         df["日期"].dt.date >= state.start_date,
@@ -292,15 +273,13 @@ def get_filtered_df():
         df["买家实际支付金额"] >= state.min_p,
         df["买家实际支付金额"] <= state.max_p
     ]
-
     filter_df = df[np.all(filter_conditions, axis=0)].copy()
     state.filter_df_cache = filter_df
     return filter_df
 
-
 filter_df = get_filtered_df()
 
-# 侧边栏导航
+# ---------------------- 侧边栏导航+筛选控件 ----------------------
 with st.sidebar:
     st.header("📊 功能导航")
     nav_items = [
@@ -313,7 +292,6 @@ with st.sidebar:
         ("🗺️ 省份地理分析", "province_detail"),
         ("⏰ 分时时段分析", "hour_detail")
     ]
-
     for txt, key in nav_items:
         btn_kwargs = {"use_container_width": True, "key": f"nav_{key}"}
         if state.page == key:
@@ -323,7 +301,6 @@ with st.sidebar:
             st.rerun()
 
     st.divider()
-
     if not filter_df.empty:
         excel_bytes = export_excel({"筛选数据": filter_df})
         if excel_bytes:
@@ -338,14 +315,12 @@ with st.sidebar:
         st.download_button(
             label="📥 导出当前筛选数据.xlsx",
             data=b"",
-            file_name="筛选后销售数据.xlsx",
-            mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
             disabled=True,
             use_container_width=True
         )
 
     st.divider()
-
+    # 仅当有数据时才渲染筛选控件，杜绝空值异常
     if not df.empty:
         with st.expander("🔍 全局筛选", expanded=True):
             st.multiselect(
@@ -355,7 +330,6 @@ with st.sidebar:
                 key="price_key",
                 on_change=on_filter_change
             )
-
             col1, col2 = st.columns(2)
             with col1:
                 st.date_input(
@@ -375,7 +349,6 @@ with st.sidebar:
                     key="end_key",
                     on_change=on_filter_change
                 )
-
             prov_options = sorted(df["省份标准化"].unique())
             st.multiselect(
                 "省份",
@@ -384,7 +357,6 @@ with st.sidebar:
                 key="prov_key",
                 on_change=on_filter_change
             )
-
             st.slider(
                 "支付金额范围",
                 min_value=float(df["买家实际支付金额"].min()),
@@ -395,9 +367,6 @@ with st.sidebar:
             )
 
 # 全局指标
-start_date = state.start_date
-end_date = state.end_date
-
 total_sales = filter_df["买家实际支付金额"].sum() if not filter_df.empty else 0
 total_ord_cnt = len(filter_df)
 unique_ord = filter_df["订单编号"].nunique() if not filter_df.empty else 0
@@ -405,7 +374,7 @@ avg_price = round(total_sales / unique_ord, 3) if unique_ord > 0 else 0
 prov_count = filter_df["省份标准化"].nunique() if not filter_df.empty else 0
 page = state.page
 
-# 首页总览
+# ===================== 页面1：首页总览 =====================
 if page == "home":
     st.header("▦ 电商销售数据可视化分析平台 | 综合总览")
     kpi_row = st.columns(4)
@@ -422,20 +391,16 @@ if page == "home":
             退款金额=("退款金额", "sum")
         ).reset_index()
         daily_stats_full = pd.merge(
-            pd.DataFrame({"日期": pd.date_range(start_date, end_date)}),
+            pd.DataFrame({"日期": pd.date_range(state.start_date, state.end_date)}),
             daily_stats,
             how="left"
         ).fillna(0)
 
         hour_stats = filter_df.groupby("小时").agg(
-            订单量=("买家实际支付金额", "count"),
+            订单量=("订单编号", "count"),
             平均订单金额=("买家实际支付金额", lambda x: round(x.mean(), 3))
         ).reset_index()
-        hour_stats_full = pd.merge(
-            pd.DataFrame({"小时": range(24)}),
-            hour_stats,
-            how="left"
-        ).fillna(0)
+        hour_stats_full = pd.merge(pd.DataFrame({"小时": range(24)}), hour_stats, how="left").fillna(0)
 
         prov_stats = filter_df.groupby("省份标准化").agg(
             订单量=("订单编号", "count"),
@@ -445,8 +410,7 @@ if page == "home":
         top15_sales = prov_stats.sort_values(by="销售额", ascending=False).head(15).rename(columns={"省份标准化": "省份"})
 
         week_stats = filter_df.groupby("星期名称")["订单编号"].count().reset_index(name="订单量")
-        week_stats["排序"] = week_stats["星期名称"].map(
-            {"周一": 0, "周二": 1, "周三": 2, "周四": 3, "周五": 4, "周六": 5, "周日": 6})
+        week_stats["排序"] = week_stats["星期名称"].map({"周一":0,"周二":1,"周三":2,"周四":3,"周五":4,"周六":5,"周日":6})
         week_stats = week_stats.sort_values("排序")
 
         price_order = ["0-50元", "50-100元", "100-200元", "200-500元", "500元以上"]
@@ -460,27 +424,22 @@ if page == "home":
         r1 = st.columns(3)
         with r1[0]:
             l = Line(chart_init(420))
-            if len(daily_stats_full):
-                l.add_xaxis([d.strftime("%m-%d") for d in daily_stats_full["日期"]])
-                l.add_yaxis("每日订单量", daily_stats_full["订单量"].tolist(), is_smooth=True)
-                l.set_global_opts(**chart_config("每日订单趋势", min_y=daily_stats_full["订单量"].min()))
+            l.add_xaxis([d.strftime("%m-%d") for d in daily_stats_full["日期"]])
+            l.add_yaxis("每日订单量", daily_stats_full["订单量"].tolist(), is_smooth=True)
+            l.set_global_opts(**chart_config("每日订单趋势"))
             html(l.render_embed(), height=420)
-
         with r1[1]:
             l = Line(chart_init(420))
-            if len(daily_stats_full):
-                l.add_xaxis([d.strftime("%m-%d") for d in daily_stats_full["日期"]])
-                l.add_yaxis("每日销售额", daily_stats_full["销售额"].tolist())
-                l.set_series_opts(areastyle_opts=opts.AreaStyleOpts(opacity=0.4))
-                l.set_global_opts(**chart_config("日销售额面积趋势图", min_y=daily_stats_full["销售额"].min()))
+            l.add_xaxis([d.strftime("%m-%d") for d in daily_stats_full["日期"]])
+            l.add_yaxis("每日销售额", daily_stats_full["销售额"].tolist())
+            l.set_series_opts(areastyle_opts=opts.AreaStyleOpts(opacity=0.4))
+            l.set_global_opts(**chart_config("日销售额面积趋势图"))
             html(l.render_embed(), height=420)
-
         with r1[2]:
             b = Bar(chart_init(460))
-            if len(hour_stats_full):
-                b.add_xaxis([str(i) for i in range(24)])
-                b.add_yaxis("24小时订单", hour_stats_full["订单量"].tolist(), bar_width="60%")
-                b.set_global_opts(**chart_config("分时订单柱状图", min_y=0))
+            b.add_xaxis([str(i) for i in range(24)])
+            b.add_yaxis("24小时订单", hour_stats_full["订单量"].tolist())
+            b.set_global_opts(**chart_config("分时订单柱状图", min_y=0))
             html(b.render_embed(), height=460)
 
         st.divider()
@@ -490,59 +449,48 @@ if page == "home":
             if not prov_stats.empty:
                 map_data = list(zip(prov_stats["省份标准化"], prov_stats["订单量"].astype(int)))
                 m.add("订单量分布", map_data, maptype="china", is_map_symbol_show=False)
-                cfg = chart_config("", zoom=False)
-                cfg["title_opts"] = opts.TitleOpts(title="全国省份订单地图")
-                m.set_global_opts(
-                    visualmap_opts=opts.VisualMapOpts(max_=int(prov_stats["订单量"].max())),
-                    **cfg
-                )
+                cfg = chart_config("全国省份订单地图", zoom=False)
+                m.set_global_opts(visualmap_opts=opts.VisualMapOpts(max_=int(prov_stats["订单量"].max())),**cfg)
             html(m.render_embed(), height=420)
-
         with r2[1]:
             b = Bar(chart_init(520))
-            if len(top15_sales):
-                b.add_xaxis(top15_sales["省份"].tolist())
-                b.add_yaxis("销售额", top15_sales["销售额"].tolist())
-                b.reversal_axis()
-                b.set_global_opts(**chart_config("TOP15省份销售额横向柱状图", min_x=0, zoom=False))
+            b.add_xaxis(top15_sales["省份"].tolist())
+            b.add_yaxis("销售额", top15_sales["销售额"].tolist())
+            b.reversal_axis()
+            b.set_global_opts(**chart_config("TOP15省份销售额横向柱状图", zoom=False))
             html(b.render_embed(), height=520)
-
         with r2[2]:
             b = Bar(chart_init(420))
-            if len(week_stats):
-                b.add_xaxis(week_stats["星期名称"].tolist())
-                b.add_yaxis("订单量", week_stats["订单量"].tolist())
-                b.set_global_opts(**chart_config("星期订单分布", min_y=week_stats["订单量"].min(), zoom=False))
+            b.add_xaxis(week_stats["星期名称"].tolist())
+            b.add_yaxis("订单量", week_stats["订单量"].tolist())
+            b.set_global_opts(**chart_config("星期订单分布", zoom=False))
             html(b.render_embed(), height=420)
 
         st.divider()
         r3 = st.columns(3)
         with r3[0]:
             p = Pie(chart_init(420))
-            if len(price_stats) > 0:
-                p.add("", [list(z) for z in zip(price_stats["金额区间"], price_stats["占比"])], radius=["30%", "70%"])
-                p.set_global_opts(**chart_config("客单价区间占比饼图", zoom=False))
+            p.add("", [list(z) for z in zip(price_stats["金额区间"], price_stats["占比"])], radius=["30%", "70%"])
+            p.set_global_opts(**chart_config("客单价区间占比饼图", zoom=False))
             html(p.render_embed(), height=420)
-
         with r3[1]:
             box = Boxplot(chart_init(440))
-            if len(filter_df) > 0:
-                box.add_xaxis(["全量订单客单价"])
-                box.add_yaxis("客单价分布", box.prepare_data([filter_df["买家实际支付金额"].dropna().tolist()]))
-                box.set_global_opts(markpoint_opts=opts.MarkPointOpts(
-                    data=[opts.MarkPointItem(type_="max"), opts.MarkPointItem(type_="min")]))
-                box.set_global_opts(**chart_config("客单价分布箱线图", min_y=0, zoom=False))
+            box.add_xaxis(["全量订单客单价"])
+            box.add_yaxis("客单价分布", box.prepare_data([filter_df["买家实际支付金额"].dropna().tolist()]))
+            # 修复：markpoint放到set_series_opts，不再报TypeError
+            box.set_series_opts(
+                markpoint_opts=opts.MarkPointOpts(data=[opts.MarkPointItem(type_="max"), opts.MarkPointItem(type_="min")])
+            )
+            box.set_global_opts(**chart_config("客单价分布箱线图", min_y=0, zoom=False))
             html(box.render_embed(), height=440)
-
         with r3[2]:
             l = Line(chart_init(420))
-            if len(daily_stats_full):
-                l.add_xaxis([d.strftime("%m-%d") for d in daily_stats_full["日期"]])
-                l.add_yaxis("退款金额", daily_stats_full["退款金额"].tolist(), is_smooth=True)
-                l.set_global_opts(**chart_config("每日退款趋势", min_y=daily_stats_full["退款金额"].min()))
+            l.add_xaxis([d.strftime("%m-%d") for d in daily_stats_full["日期"]])
+            l.add_yaxis("退款金额", daily_stats_full["退款金额"].tolist(), is_smooth=True)
+            l.set_global_opts(**chart_config("每日退款趋势"))
             html(l.render_embed(), height=420)
 
-# 数据预处理日志页
+# ===================== 页面2：数据预处理日志 =====================
 elif page == "preprocess":
     st.header("📋 数据预处理完整日志")
     for idx, log in enumerate(state.preprocess_log, 1):
@@ -556,53 +504,37 @@ elif page == "preprocess":
         st.subheader("清洗后数据前10行")
         st.dataframe(state.clean_df.head(10), use_container_width=True, hide_index=True)
 
-# 基础统计分析页
+# ===================== 页面3：基础统计分析 =====================
 elif page == "stat_analysis":
     st.header("📈 基础探索性统计分析")
-    if len(filter_df) > 0:
-        desc_df = filter_df[["购买数量", "买家实际支付金额", "小时"]].describe()
-        desc_df = desc_df.round(3)
+    if not filter_df.empty:
+        desc_df = filter_df[["购买数量", "买家实际支付金额", "小时"]].describe().round(3)
         st.dataframe(desc_df, use_container_width=True, hide_index=True)
         st.divider()
-
-        corr_cols = ["购买数量", "买家实际支付金额", "小时"]
-        corr_matrix = filter_df[corr_cols].corr(method="pearson")
-
+        corr_matrix = filter_df[["购买数量", "买家实际支付金额", "小时"]].corr(method="pearson")
         fig, ax = plt.subplots(figsize=(7, 5), dpi=300)
-        sns.heatmap(
-            corr_matrix,
-            annot=True,
-            cmap="Blues",
-            vmin=-0.1,
-            vmax=1,
-            ax=ax,
-            fmt=".3f",
-            linewidths=0.5
-        )
-        ax.set_title("皮尔逊相关系数热力图", fontsize=16, pad=20)
-        ax.set_xticklabels(["购买数量", "买家实际支付金额", "小时"], rotation=0)
-        ax.set_yticklabels(["购买数量", "买家实际支付金额", "小时"], rotation=0)
+        sns.heatmap(corr_matrix, annot=True, cmap="Blues", vmin=-0.1, vmax=1, ax=ax, fmt=".3f")
+        ax.set_title("皮尔逊相关系数热力图")
         plt.tight_layout()
-
         buf = io.BytesIO()
-        plt.savefig(buf, format="png", bbox_inches="tight", dpi=300)
+        plt.savefig(buf, format="png", bbox_inches="tight")
         buf.seek(0)
         st.image(buf, use_container_width=True)
         plt.close()
     else:
-        st.warning("⚠️ 暂无筛选数据，无法进行统计分析")
+        st.info("暂无筛选数据")
 
-# 销售额详情页
+# ===================== 页面4：销售额详情 =====================
 elif page == "sale_detail":
     st.header("💰 销售额深度详情")
-    if len(filter_df) > 0:
+    if not filter_df.empty:
         daily_stats = filter_df.groupby("日期").agg(
             订单量=("订单编号", "count"),
             销售额=("买家实际支付金额", "sum"),
             退款金额=("退款金额", "sum")
         ).reset_index()
         daily_stats_full = pd.merge(
-            pd.DataFrame({"日期": pd.date_range(start_date, end_date)}),
+            pd.DataFrame({"日期": pd.date_range(state.start_date, state.end_date)}),
             daily_stats,
             how="left"
         ).fillna(0)
@@ -612,8 +544,7 @@ elif page == "sale_detail":
             销售额=("买家实际支付金额", "sum")
         ).reset_index()
         prov_stats = prov_stats[prov_stats["订单量"] > 0]
-        top15_sales = prov_stats.sort_values(by="销售额", ascending=False).head(15).rename(
-            columns={"省份标准化": "省份"})
+        top15_sales = prov_stats.sort_values("销售额", ascending=False).head(15).rename(columns={"省份标准化": "省份"})
 
         col1, col2 = st.columns(2)
         with col1:
@@ -621,41 +552,36 @@ elif page == "sale_detail":
             l.add_xaxis([d.strftime("%m-%d") for d in daily_stats_full["日期"]])
             l.add_yaxis("日销售额", daily_stats_full["销售额"].tolist())
             l.set_series_opts(areastyle_opts=opts.AreaStyleOpts(opacity=0.4))
-            l.set_global_opts(**chart_config("日销售额面积趋势图", min_y=daily_stats_full["销售额"].min()))
+            l.set_global_opts(**chart_config("日销售额面积趋势图"))
             html(l.render_embed(), height=480)
-
         with col2:
             b = Bar(chart_init(520))
             b.add_xaxis(top15_sales["省份"].tolist())
             b.add_yaxis("省份销售额", top15_sales["销售额"].tolist())
             b.reversal_axis()
-            b.set_global_opts(**chart_config("TOP15省份销售额", min_x=0, zoom=False))
+            b.set_global_opts(**chart_config("TOP15省份销售额", zoom=False))
             html(b.render_embed(), height=520)
-
-        top15_sales_ranked = top15_sales.reset_index(drop=True)
-        top15_sales_ranked.insert(0, "排名", range(1, len(top15_sales_ranked) + 1))
-        st.dataframe(top15_sales_ranked, use_container_width=True, hide_index=True)
+        top15_sales.insert(0, "排名", range(1, len(top15_sales)+1))
+        st.dataframe(top15_sales, use_container_width=True, hide_index=True)
     else:
-        st.warning("⚠️ 暂无筛选数据，无法展示销售额详情")
+        st.info("暂无筛选数据")
 
-# 订单量详情页
+# ===================== 页面5：订单量详情 =====================
 elif page == "order_detail":
     st.header("📦 订单量深度详情")
-    if len(filter_df) > 0:
+    if not filter_df.empty:
         daily_stats = filter_df.groupby("日期").agg(
             订单量=("订单编号", "count"),
-            销售额=("买家实际支付金额", "sum"),
-            退款金额=("退款金额", "sum")
+            销售额=("买家实际支付金额", "sum")
         ).reset_index()
         daily_stats_full = pd.merge(
-            pd.DataFrame({"日期": pd.date_range(start_date, end_date)}),
+            pd.DataFrame({"日期": pd.date_range(state.start_date, state.end_date)}),
             daily_stats,
             how="left"
         ).fillna(0)
 
         week_stats = filter_df.groupby("星期名称")["订单编号"].count().reset_index(name="订单量")
-        week_stats["排序"] = week_stats["星期名称"].map(
-            {"周一": 0, "周二": 1, "周三": 2, "周四": 3, "周五": 4, "周六": 5, "周日": 6})
+        week_stats["排序"] = week_stats["星期名称"].map({"周一":0,"周二":1,"周三":2,"周四":3,"周五":4,"周六":5,"周日":6})
         week_stats = week_stats.sort_values("排序")
 
         col1, col2 = st.columns(2)
@@ -663,29 +589,27 @@ elif page == "order_detail":
             l = Line(chart_init(480))
             l.add_xaxis([d.strftime("%m-%d") for d in daily_stats_full["日期"]])
             l.add_yaxis("日订单数", daily_stats_full["订单量"].tolist(), is_smooth=True)
-            l.set_global_opts(**chart_config("每日订单趋势", min_y=daily_stats_full["订单量"].min()))
+            l.set_global_opts(**chart_config("每日订单趋势"))
             html(l.render_embed(), height=480)
-
         with col2:
             b = Bar(chart_init(480))
             b.add_xaxis(week_stats["星期名称"].tolist())
             b.add_yaxis("周订单量", week_stats["订单量"].tolist())
-            b.set_global_opts(**chart_config("星期订单分布", min_y=week_stats["订单量"].min(), zoom=False))
+            b.set_global_opts(**chart_config("星期订单分布", zoom=False))
             html(b.render_embed(), height=480)
     else:
-        st.warning("⚠️ 暂无筛选数据，无法展示订单量详情")
+        st.info("暂无筛选数据")
 
-# 客单价区间分析页
+# ===================== 页面6：客单价区间分析 =====================
 elif page == "price_detail":
     st.header("💵 客单价&金额区间分析")
-    if len(filter_df) > 0:
+    if not filter_df.empty:
         price_order = ["0-50元", "50-100元", "100-200元", "200-500元", "500元以上"]
         price_stats = filter_df["金额区间"].value_counts().reset_index()
         price_stats.columns = ["金额区间", "订单数"]
         if unique_ord > 0:
             price_stats["占比"] = (price_stats["订单数"] / unique_ord * 100).round(2)
-        price_stats["sort_idx"] = price_stats["金额区间"].map(
-            lambda x: price_order.index(x) if x in price_order else 99)
+        price_stats["sort_idx"] = price_stats["金额区间"].map(lambda x: price_order.index(x) if x in price_order else 99)
         price_stats = price_stats.sort_values("sort_idx").reset_index(drop=True)
 
         p = Pie(chart_init(500))
@@ -699,67 +623,54 @@ elif page == "price_detail":
         box.add_xaxis(["客单价分布"])
         box.add_yaxis("客单价(元)", box.prepare_data([filter_df["买家实际支付金额"].dropna().tolist()]))
         box.set_series_opts(
-            markpoint_opts=opts.MarkPointOpts(data=[opts.MarkPointItem(type_="max"), opts.MarkPointItem(type_="min")]))
+            markpoint_opts=opts.MarkPointOpts(data=[opts.MarkPointItem(type_="max"), opts.MarkPointItem(type_="min")])
+        )
         box.set_global_opts(**chart_config("客单价分布箱线图", min_y=0, zoom=False))
         html(box.render_embed(), height=500)
     else:
-        st.warning("⚠️ 暂无筛选数据，无法展示客单价分析")
+        st.info("暂无筛选数据")
 
-# 省份地理分析页
+# ===================== 页面7：省份地理分析 =====================
 elif page == "province_detail":
     st.header("🗺️ 全国省份地理销售详情")
-    if len(filter_df) > 0:
+    if not filter_df.empty:
         filter_df["年月"] = filter_df["日期"].dt.to_period("M")
         month_group = filter_df.groupby(["年月", "省份标准化"])["订单编号"].count().reset_index()
         month_group = month_group[month_group["订单编号"] > 0]
 
         tl = Timeline(chart_init(550))
-        tl.add_schema(
-            play_interval=1000,
-            is_auto_play=False,
-            is_loop_play=False,
-            pos_bottom="5%"
-        )
-
+        tl.add_schema(play_interval=1000, is_auto_play=False, is_loop_play=False)
         for ym in sorted(month_group["年月"].unique()):
             sub_df = month_group[month_group["年月"] == ym]
             map_data = list(zip(sub_df["省份标准化"], sub_df["订单编号"]))
             m = Map(chart_init(550))
             m.add("订单量", map_data, maptype="china")
-            cfg = chart_config("", zoom=False)
-            cfg["title_opts"] = opts.TitleOpts(title=f"{ym} 各省份订单分布")
             m.set_global_opts(
                 visualmap_opts=opts.VisualMapOpts(max_=sub_df["订单编号"].max()),
-                **cfg
+                title_opts=opts.TitleOpts(title=f"{ym} 各省份订单分布")
             )
             tl.add(m, str(ym))
-
         html(tl.render_embed(), height=580)
 
         prov_stats = filter_df.groupby("省份标准化").agg(
             订单量=("订单编号", "count"),
             销售额=("买家实际支付金额", "sum")
         ).reset_index()
-        prov_stats = prov_stats[prov_stats["订单量"] > 0]
-        prov_stats_sorted = prov_stats.sort_values("销售额", ascending=False).reset_index(drop=True)
-        prov_stats_sorted.insert(0, "排名", range(1, len(prov_stats_sorted) + 1))
-        st.dataframe(prov_stats_sorted, use_container_width=True, hide_index=True)
+        prov_stats = prov_stats.sort_values("销售额", ascending=False).reset_index(drop=True)
+        prov_stats.insert(0, "排名", range(1, len(prov_stats)+1))
+        st.dataframe(prov_stats, use_container_width=True, hide_index=True)
     else:
-        st.warning("⚠️ 暂无筛选数据，无法展示省份地理分析")
+        st.info("暂无筛选数据")
 
-# 分时时段分析页
+# ===================== 页面8：分时时段分析 =====================
 elif page == "hour_detail":
     st.header("⏰ 24小时分时深度分析")
-    if len(filter_df) > 0:
+    if not filter_df.empty:
         hour_stats = filter_df.groupby("小时").agg(
-            订单量=("买家实际支付金额", "count"),
+            订单量=("订单编号", "count"),
             平均订单金额=("买家实际支付金额", lambda x: round(x.mean(), 3))
         ).reset_index()
-        hour_stats_full = pd.merge(
-            pd.DataFrame({"小时": range(24)}),
-            hour_stats,
-            how="left"
-        ).fillna(0)
+        hour_stats_full = pd.merge(pd.DataFrame({"小时": range(24)}), hour_stats, how="left").fillna(0)
 
         col1, col2 = st.columns(2)
         with col1:
@@ -768,12 +679,11 @@ elif page == "hour_detail":
             b.add_yaxis("每小时订单", hour_stats_full["订单量"].tolist())
             b.set_global_opts(**chart_config("分时订单量", min_y=0))
             html(b.render_embed(), height=480)
-
         with col2:
             b = Bar(chart_init(480))
             b.add_xaxis([str(i) for i in range(24)])
             b.add_yaxis("每小时平均客单价", hour_stats_full["平均订单金额"].tolist())
-            b.set_global_opts(**chart_config("分时平均客单价", min_y=hour_stats_full["平均订单金额"].min()))
+            b.set_global_opts(**chart_config("分时平均客单价"))
             html(b.render_embed(), height=480)
     else:
-        st.warning("⚠️ 暂无筛选数据，无法展示分时时段分析")
+        st.info("暂无筛选数据")
