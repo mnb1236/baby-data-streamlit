@@ -213,7 +213,7 @@ with st.sidebar:
         c2.date_input("结束日期", value=state.end_date, min_value=df["日期"].min().date(), max_value=df["日期"].max().date(), key="end_key", on_change=on_filter_change)
         st.multiselect("省份", sorted(df["省份标准化"].unique()), default=state.sel_prov, key="prov_key", on_change=on_filter_change)
 
-        # 滑块自动绑定当前数据集真实极值，不再写死0~99999
+        # 滑块自动绑定当前数据集真实极值
         slider_min = float(df["买家实际支付金额"].min())
         slider_max = float(df["买家实际支付金额"].max())
         st.slider(
@@ -376,8 +376,8 @@ elif page == "stat_analysis":
         fig, ax = plt.subplots(figsize=(7, 5), dpi=300)
         sns.heatmap(corr_matrix, annot=True, cmap="Blues", vmin=-0.1, vmax=1, ax=ax)
         ax.set_title("皮尔逊相关系数热力图", fontsize=16)
-        ax.set_xticklabels(["购买数量", "买家实际支付金额", "小时"])
-        ax.set_yticklabels(["购买数量", "小时"])
+        ax.set_xticklabels(corr_cols)
+        ax.set_yticklabels(corr_cols)
         plt.tight_layout()
         buf = io.BytesIO()
         plt.savefig(buf, format="png", bbox_inches="tight")
