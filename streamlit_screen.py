@@ -592,25 +592,24 @@ elif page == "stat_analysis":
     else:
         st.header("📈 基础探索性统计分析")
 
-        # 1. 只选取数值型字段，自动过滤常数列
         numeric_cols = filter_df.select_dtypes(include=[np.number]).columns
         valid_cols = []
         for col in numeric_cols:
             if filter_df[col].var() > 1e-6:
                 valid_cols.append(col)
 
-        # 描述统计表
         desc_df = filter_df[valid_cols].describe().round(3)
-        st.dataframe(desc_df, use_container_width=True, hide_index=False)
+        st.dataframe(desc_df, use_container_width=True)
         st.divider()
 
-        # 计算皮尔逊相关矩阵
         corr_matrix = filter_df[valid_cols].corr(method="pearson")
 
-        # 2. 【关键】在绘图前重新强制设置字体，解决方框乱码
-        import matplotlib.pyplot as plt
-        plt.rcParams['font.sans-serif'] = ['WenQuanYi Zen Hei', 'SimHei', 'DejaVu Sans']
-        plt.rcParams['axes.unicode_minus'] = False  # 解决负号显示为方框
+        # 直接在代码里强制设置字体，不需要外部文件
+        import matplotlib
+        matplotlib.use("Agg")
+        # 优先使用云端自带文泉驿黑体，兜底英文
+        plt.rcParams['font.sans-serif'] = ['WenQuanYi Zen Hei', 'DejaVu Sans']
+        plt.rcParams['axes.unicode_minus'] = False
 
         fig, ax = plt.subplots(figsize=(10, 8), dpi=300)
         sns.heatmap(
@@ -634,7 +633,6 @@ elif page == "stat_analysis":
 
         plt.tight_layout()
 
-        # 导出图片
         buf = io.BytesIO()
         fig.savefig(buf, format="png", bbox_inches="tight", dpi=300)
         buf.seek(0)
