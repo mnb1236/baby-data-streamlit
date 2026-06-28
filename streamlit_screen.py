@@ -591,16 +591,24 @@ elif page == "stat_analysis":
         st.warning("⚠️ 请先上传并加载数据")
     else:
         st.header("📈 基础探索性统计分析")
-        desc_df = filter_df[["购买数量", "买家实际支付金额", "小时"]].describe()
-        desc_df = desc_df.round(3)
-        st.dataframe(desc_df, use_container_width=True, hide_index=True)
+
+        # 自动筛选出方差>0的有效数值字段，避免字段被自动删除
+        numeric_cols = filter_df.select_dtypes(include=[np.number]).columns
+        valid_cols = []
+        for col in numeric_cols:
+            if filter_df[col].var() > 1e-6:
+                valid_cols.append(col)
+
+        st.subheader("描述性统计")
+        desc_df = filter_df[valid_cols].describe().round(3)
+        st.dataframe(desc_df, use_container_width=True)
         st.divider()
 
-        corr_cols = ["购买数量", "买家实际支付金额", "小时"]
-        corr_matrix = filter_df[corr_cols].corr(method="pearson")
+        # 计算皮尔逊相关矩阵
+        corr_matrix = filter_df[valid_cols].corr(method="pearson")
 
-        # 优化热力图绘制代码
-        fig, ax = plt.subplots(figsize=(7, 5), dpi=300)
+        # 绘制相关性热力图
+        fig, ax = plt.subplots(figsize=(8, 6), dpi=300)
         sns.heatmap(
             corr_matrix,
             annot=True,
@@ -611,30 +619,18 @@ elif page == "stat_analysis":
             square=True,
             linewidths=0.6,
             linecolor="#ffffff",
-            annot_kws={
-                "fontsize": 11,
-                "color": "#000000",
-                "fontfamily": "SimHei, WenQuanYi Zen Hei"
-            },
-            cbar_kws={
-                "shrink": 0.75,
-                "aspect": 18,
-                "label": "皮尔逊相关系数"
-            },
+            annot_kws={"fontsize": 12, "color": "black"},
+            cbar_kws={"shrink": 0.8, "label": "皮尔逊相关系数"},
             ax=ax
         )
-        # 隐藏边框
-        for spine in ["top", "right", "left", "bottom"]:
-            ax.spines[spine].set_visible(False)
-        # 标题与坐标轴
-        ax.set_title("数值字段皮尔逊相关性热力图", fontsize=16, pad=20, fontweight="bold")
-        ax.set_xticklabels(["购买数量", "买家实际支付金额", "小时"], rotation=0, ha="center", fontsize=12)
-        ax.set_yticklabels(["购买数量", "买家实际支付金额", "小时"], rotation=0, va="center", fontsize=12)
+        ax.set_title("数值字段皮尔逊相关性热力图", fontsize=16, pad=20)
+        ax.set_xticklabels(corr_matrix.columns, rotation=0, ha="center")
+        ax.set_yticklabels(corr_matrix.columns, rotation=0, va="center")
         plt.tight_layout()
 
-        # 图片缓存导出
+        # 输出图片
         buf = io.BytesIO()
-        fig.savefig(buf, format="png", bbox_inches="tight", dpi=300, pad_inches=0.1)
+        fig.savefig(buf, format="png", bbox_inches="tight", dpi=300)
         buf.seek(0)
         st.image(buf, use_container_width=True)
 
@@ -642,13 +638,10 @@ elif page == "stat_analysis":
             label="📥 下载热力图图片",
             data=buf,
             file_name=f"相关性热力图_{date.today()}.png",
-            mime="image/png",
-            use_container_width=True
+            mime="image/png"
         )
-        # 释放画布，防止内存堆积
         plt.clf()
         plt.close(fig)
-
 # 页面4：销售额详情
 elif page == "sale_detail":
     if filter_df is None or filter_df.empty:
