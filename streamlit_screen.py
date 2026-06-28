@@ -112,14 +112,9 @@ def load_data(file_bytes):
     obj_cols = df.select_dtypes(include=["object"]).columns
     df[obj_cols] = df[obj_cols].fillna("未知")
 
-    df["district"] = df["district"].str.replace("省$", "", regex=True)
-    province_map = {
-        '北京':'北京市','天津':'天津市','上海':'上海市','重庆':'重庆市',
-        '内蒙古':'内蒙古自治区','广西壮族':'广西壮族自治区','西藏':'西藏自治区',
-        '宁夏':'宁夏回族自治区','新疆维吾尔自治区':'新疆维吾尔自治区',
-        '香港':'香港特别行政区','澳门':'澳门特别行政区','台湾':'台湾省'
-    }
-    df["省份标准化"] = df["district"].replace(province_map)
+    # 关键修改：不再裁剪省份名称，直接把原字段重命名为【省份标准化】，和Excel名称完全保持一致
+    df.rename(columns={"district": "省份标准化"}, inplace=True)
+
     df["日期"] = pd.to_datetime(df["Date"], errors="coerce")
     date_err = df["日期"].isna().sum()
     df = df.dropna(subset=["日期"])
@@ -186,6 +181,7 @@ with st.sidebar:
         c1, c2 = st.columns(2)
         c1.date_input("起始日期", value=state.start_date, min_value=df["日期"].min().date(), max_value=df["日期"].max().date(), key="start_key", on_change=on_filter_change)
         c2.date_input("结束日期", value=state.end_date, min_value=df["日期"].min().date(), max_value=df["日期"].max().date(), key="end_key", on_change=on_filter_change)
+        # 下拉列表自动读取Excel里完整省份名称，不再做字符修改
         st.multiselect("省份", sorted(df["省份标准化"].unique()), default=state.sel_prov, key="prov_key", on_change=on_filter_change)
 
         slider_min = float(df["买家实际支付金额"].min())
@@ -216,8 +212,7 @@ if not state.is_init_finished:
     st.stop()
 
 
-# ===================== 核心修复：所有页面共用同一份筛选后数据 =====================
-# 【把筛选逻辑放到所有页面最前面，切换页面都会重新执行筛选，保证全局筛选同步到每一个子页面】
+# ===================== 核心筛选逻辑（所有页面共用同一份数据） =====================
 if len(state.sel_prov) == 0:
     filter_df = df[
         (df["金额区间"].isin(state.sel_price_range)) &
@@ -379,7 +374,6 @@ elif page == "stat_analysis":
 
 elif page == "sale_detail":
     st.header("💰 销售额深度详情")
-    # 直接使用全局筛选后的filter_df，和首页完全同步
     daily_stats = filter_df.groupby("日期").agg(订单量=("订单编号","count"),销售额=("买家实际支付金额","sum"),退款金额=("退款金额","sum")).reset_index()
     daily_stats_full = pd.merge(pd.DataFrame({"日期":pd.date_range(state.start_date, state.end_date)}), daily_stats, how="left").fillna(0)
     prov_stats = filter_df.groupby("省份标准化").agg(订单量=("订单编号","count"),销售额=("买家实际支付金额","sum")).reset_index()
