@@ -44,11 +44,12 @@ state.setdefault("end_date", None)
 state.setdefault("sel_prov", [])
 state.setdefault("min_p", 0.0)
 state.setdefault("max_p", 99999.0)
+# 新增标记：等待用户点击【应用筛选】才渲染图表
+state.setdefault("apply_filter_flag", False)
 
 
-# ========== 方案2：增加key存在判断，修复KeyError ==========
+# 方案2：增加key存在判断，修复KeyError
 def on_filter_change():
-    # 先判断所有组件key是否存在，不存在直接退出，不执行赋值
     if "price_key" not in state:
         return
     if "start_key" not in state:
@@ -59,13 +60,11 @@ def on_filter_change():
         return
     if "slider_key" not in state:
         return
-
     state.sel_price_range = state["price_key"]
     state.start_date = state["start_key"]
     state.end_date = state["end_key"]
     state.sel_prov = state["prov_key"]
     state.min_p, state.max_p = state["slider_key"]
-    st.rerun()
 
 
 def chart_init(height=480):
@@ -156,11 +155,15 @@ def load_data(file_bytes):
 st.title("📊 母婴电商销售数据可视化分析平台")
 uploaded_file = st.file_uploader("请上传Excel数据文件（clean_baby_data.xlsx）", type=["xlsx"])
 
+# 每次重新上传文件，重置筛选标记，清空图表
 if uploaded_file is not None:
     RAW, CLEAN, LOGS = load_data(uploaded_file.read())
     state.raw_df, state.clean_df, state.preprocess_log = RAW, CLEAN, LOGS
+    # 上传新文件后，强制重置筛选开关，必须手动点按钮才渲染图表
+    state.apply_filter_flag = False
 else:
     st.info("请先上传数据文件，否则无法继续分析！")
+    # 无文件时直接停止，不渲染任何图表
     st.stop()
 
 df = CLEAN
@@ -187,6 +190,7 @@ with st.sidebar:
     for txt, key in nav:
         if st.button(txt, use_container_width=True):
             state.page = key
+            # 切换页面也保持筛选状态不变
             st.rerun()
 
     st.divider()
@@ -209,8 +213,19 @@ with st.sidebar:
         st.multiselect("省份", sorted(df["省份标准化"].unique()), default=state.sel_prov, key="prov_key", on_change=on_filter_change)
         st.slider("支付金额范围", float(df["买家实际支付金额"].min()), float(df["买家实际支付金额"].max()), (state.min_p, state.max_p), key="slider_key", on_change=on_filter_change)
 
+        # 新增【应用筛选】按钮，只有点击后才会渲染筛选后的图表
+        if st.button("✅ 应用筛选条件", use_container_width=True):
+            state.apply_filter_flag = True
+            st.rerun()
 
-# 筛选逻辑
+
+# ---------------------- 核心修改：没有点击【应用筛选】，不渲染任何图表 ----------------------
+if not state.apply_filter_flag:
+    st.info("👆 请先在左侧完成筛选条件设置，然后点击【应用筛选条件】按钮，图表才会同步加载数据！")
+    st.stop()
+
+
+# 筛选逻辑（仅在点击按钮后才执行）
 if len(state.sel_prov) == 0:
     filter_df = df[
         (df["金额区间"].isin(state.sel_price_range)) &
