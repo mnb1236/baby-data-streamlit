@@ -42,10 +42,10 @@ state.setdefault("preprocess_log", [])
 state.setdefault("sel_price_range", ["0-50元","50-100元","100-200元","200-500元","500元以上"])
 state.setdefault("start_date", None)
 state.setdefault("end_date", None)
-# 省份默认空 = 不做省份筛选（等同于全部选中）
+# 省份默认空 = 全部省份
 state.setdefault("sel_prov", [])
-state.setdefault("min_p", 0.0)
-state.setdefault("max_p", 99999.0)
+state.setdefault("min_p", None)
+state.setdefault("max_p", None)
 
 
 # 方案2：增加key存在判断，修复KeyError
@@ -155,23 +155,28 @@ def load_data(file_bytes):
 st.title("📊 母婴电商销售数据可视化分析平台")
 uploaded_file = st.file_uploader("请上传Excel数据文件（clean_baby_data.xlsx）", type=["xlsx"])
 
+df = None
 if uploaded_file is not None:
     RAW, CLEAN, LOGS = load_data(uploaded_file.read())
     state.raw_df, state.clean_df, state.preprocess_log = RAW, CLEAN, LOGS
+    df = CLEAN
+
+    # 每次上传新文件，自动把金额滑块重置为数据集真实最小、最大值
+    real_min = float(df["买家实际支付金额"].min())
+    real_max = float(df["买家实际支付金额"].max())
+    state.min_p = real_min
+    state.max_p = real_max
+
+    # 日期自动重置为数据集完整区间
+    state.start_date = df["日期"].min().date()
+    state.end_date = df["日期"].max().date()
+
 else:
     st.info("请先上传数据文件，否则无法继续分析！")
     st.stop()
 
-df = CLEAN
 
-# 日期默认取全量时间范围
-if state.start_date is None:
-    state.start_date = df["日期"].min().date()
-if state.end_date is None:
-    state.end_date = df["日期"].max().date()
-
-
-# 侧边栏（已删除【应用筛选】按钮）
+# 侧边栏
 with st.sidebar:
     st.header("📊 功能导航")
     nav = [
@@ -202,19 +207,27 @@ with st.sidebar:
     st.divider()
     with st.expander("🔍 全局筛选", expanded=True):
         price_order = ["0-50元","50-100元","100-200元","200-500元","500元以上"]
-        # 默认全部选中，修改时自动触发筛选
         st.multiselect("金额区间", price_order, default=state.sel_price_range, key="price_key", on_change=on_filter_change)
         c1, c2 = st.columns(2)
         c1.date_input("起始日期", value=state.start_date, min_value=df["日期"].min().date(), max_value=df["日期"].max().date(), key="start_key", on_change=on_filter_change)
         c2.date_input("结束日期", value=state.end_date, min_value=df["日期"].min().date(), max_value=df["日期"].max().date(), key="end_key", on_change=on_filter_change)
-        # 省份默认空 = 不筛选全部省份，用户手动勾选才会限制省份
         st.multiselect("省份", sorted(df["省份标准化"].unique()), default=state.sel_prov, key="prov_key", on_change=on_filter_change)
-        st.slider("支付金额范围", float(df["买家实际支付金额"].min()), float(df["买家实际支付金额"].max()), (state.min_p, state.max_p), key="slider_key", on_change=on_filter_change)
+
+        # 滑块自动绑定当前数据集真实极值，不再写死0~99999
+        slider_min = float(df["买家实际支付金额"].min())
+        slider_max = float(df["买家实际支付金额"].max())
+        st.slider(
+            "支付金额范围",
+            min_value=slider_min,
+            max_value=slider_max,
+            value=(state.min_p, state.max_p),
+            key="slider_key",
+            on_change=on_filter_change
+        )
 
 
-# 筛选逻辑
+# 筛选逻辑（省份为空=查询全部省份，和其他筛选条件同步生效）
 if len(state.sel_prov) == 0:
-    # 省份为空：不限制省份，查询全部省份
     filter_df = df[
         (df["金额区间"].isin(state.sel_price_range)) &
         (df["日期"].dt.date >= state.start_date) &
@@ -223,7 +236,6 @@ if len(state.sel_prov) == 0:
         (df["买家实际支付金额"] <= state.max_p)
     ].copy()
 else:
-    # 手动勾选了省份，按选中省份筛选
     filter_df = df[
         (df["金额区间"].isin(state.sel_price_range)) &
         (df["日期"].dt.date >= state.start_date) &
@@ -365,7 +377,7 @@ elif page == "stat_analysis":
         sns.heatmap(corr_matrix, annot=True, cmap="Blues", vmin=-0.1, vmax=1, ax=ax)
         ax.set_title("皮尔逊相关系数热力图", fontsize=16)
         ax.set_xticklabels(["购买数量", "买家实际支付金额", "小时"])
-        ax.set_yticklabels(["购买数量", "买家实际支付金额", "小时"])
+        ax.set_yticklabels(["购买数量", "小时"])
         plt.tight_layout()
         buf = io.BytesIO()
         plt.savefig(buf, format="png", bbox_inches="tight")
