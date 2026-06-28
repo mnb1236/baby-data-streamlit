@@ -68,7 +68,11 @@ def on_filter_change():
     if "end_key" in st.session_state:
         state.end_date = st.session_state["end_key"]
     if "prov_key" in st.session_state:
-        state.sel_prov = st.session_state["prov_key"]
+        raw_prov = st.session_state["prov_key"]
+        if "所有省份" in raw_prov:
+            state.sel_prov = all_prov_list.copy()
+        else:
+            state.sel_prov = raw_prov
     if "slider_key" in st.session_state:
         state.min_p, state.max_p = st.session_state["slider_key"]
     state.filter_df_cache = None
@@ -166,7 +170,6 @@ def iqr_outlier(series):
     outlier_mask = (series < lower_bound) | (series > upper_bound)
     return outlier_mask, lower_bound, upper_bound
 
-# -------------------------- 改动1：去掉缓存，保证每次页面刷新都会重新读取文件 --------------------------
 def load_data(uploaded_file):
     if uploaded_file is None:
         raise FileNotFoundError("请上传Excel数据文件")
@@ -213,7 +216,7 @@ def load_data(uploaded_file):
 
     return raw, df, logs
 
-# ====================== 侧边栏文件上传模块（放在最前面，优先执行） ======================
+# ====================== 侧边栏文件上传模块 ======================
 with st.sidebar:
     st.header("📤 数据文件上传")
     uploaded_file = st.file_uploader(
@@ -222,23 +225,27 @@ with st.sidebar:
         help="上传包含母婴电商数据的Excel文件，字段需包含：Date、district、buy_mount、Total、user_id"
     )
 
-# -------------------------- 改动2：只要文件存在就立刻执行加载，同步写入会话状态 --------------------------
 RAW = None
 CLEAN = None
 LOGS = None
+df = None
+filter_df = None
+all_prov_list = []
+
+# 加载数据并写入会话状态
 if uploaded_file is not None:
     try:
         RAW, CLEAN, LOGS = load_data(uploaded_file)
         state.raw_df, state.clean_df, state.preprocess_log = RAW, CLEAN, LOGS
         st.success("✅ 文件加载成功！")
+        df = CLEAN
     except Exception as e:
         st.error(f"❌ 数据加载失败：{str(e)}")
 else:
     st.info("⚠️ 请先在左侧上传Excel数据文件")
+    df = state.clean_df
 
-df = CLEAN
-filter_df = None
-all_prov_list = []
+# 初始化筛选条件与缓存
 if df is not None and not df.empty:
     if state.start_date is None:
         state.start_date = df["日期"].min().date()
@@ -283,7 +290,7 @@ with st.sidebar:
         btn_kwargs = {"use_container_width": True, "key": f"nav_{key}"}
         if state.page == key:
             btn_kwargs["type"] = "primary"
-        if st.button(txt, **btn_kwargs):
+        if st.button(txt,** btn_kwargs):
             state.page = key
             st.rerun()
     st.divider()
@@ -346,10 +353,6 @@ with st.sidebar:
                 key="prov_key",
                 on_change=on_filter_change
             )
-            if "所有省份" in select_prov:
-                state.sel_prov = all_prov_list.copy()
-            else:
-                state.sel_prov = select_prov
             st.slider(
                 "支付金额范围",
                 min_value=float(df["买家实际支付金额"].min()),
@@ -359,6 +362,7 @@ with st.sidebar:
                 on_change=on_filter_change
             )
 
+# 计算全局KPI
 total_sales = 0
 total_ord_cnt = 0
 unique_ord = 0
@@ -372,6 +376,7 @@ if filter_df is not None and not filter_df.empty:
     avg_price = round(total_sales / unique_ord, 3) if unique_ord > 0 else 0
     prov_count = filter_df["省份标准化"].nunique()
 
+# ====================== 页面渲染逻辑 ======================
 if page == "home":
     if filter_df is None or filter_df.empty:
         st.warning("⚠️ 请先在左侧上传Excel数据文件")
@@ -517,7 +522,7 @@ if page == "home":
             st.download_button("📥 下载HTML图表", data=l.render_embed(), file_name="每日退款趋势.html", mime="text/html", use_container_width=True)
 
 elif page == "preprocess":
-    if RAW is None:
+    if state.raw_df is None:
         st.warning("⚠️ 请先在左侧上传Excel数据文件")
     else:
         st.header("📋 数据预处理完整日志")
@@ -624,7 +629,7 @@ elif page == "sale_detail":
                 b.reversal_axis()
                 b.set_global_opts(**chart_config("TOP15省份销售额", min_x=0, zoom=False))
             html(b.render_embed(), height=520)
-            st.download_button("📥 下载HTML图表", data=b.render_embed(), file_name="TOP15省份销售额.html", mime="text/html", use_container_width=True)
+            st.download_button("📥 下载HTML图表", data=l.render_embed(), file_name="TOP15省份销售额.html", mime="text/html", use_container_width=True)
 
         top15_sales_ranked = top15_sales.reset_index(drop=True)
         top15_sales_ranked.insert(0, "排名", range(1, len(top15_sales_ranked) + 1))
@@ -729,7 +734,7 @@ elif page == "province_detail":
             cfg["title_opts"] = opts.TitleOpts(title=f"{ym} 各省份订单分布", pos_left="center")
             if not sub_df.empty:
                 max_v = int(sub_df["订单量"].max())
-                m.set_global_opts(visualmap_opts=opts.VisualMapOpts(min_=0, max_=max_v), **cfg)
+                m.set_global_opts(visualmap_opts=opts.VisualMapOpts(min_=0, max_=max_v),** cfg)
             else:
                 m.set_global_opts(**cfg)
             tl.add(m, str(ym))
