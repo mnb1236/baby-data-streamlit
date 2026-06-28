@@ -38,14 +38,14 @@ state.setdefault("page", "home")
 state.setdefault("raw_df", None)
 state.setdefault("clean_df", None)
 state.setdefault("preprocess_log", [])
+# 默认选中全部金额区间
 state.setdefault("sel_price_range", ["0-50元","50-100元","100-200元","200-500元","500元以上"])
 state.setdefault("start_date", None)
 state.setdefault("end_date", None)
+# 省份默认空 = 不做省份筛选（等同于全部选中）
 state.setdefault("sel_prov", [])
 state.setdefault("min_p", 0.0)
 state.setdefault("max_p", 99999.0)
-# 新增标记：等待用户点击【应用筛选】才渲染图表
-state.setdefault("apply_filter_flag", False)
 
 
 # 方案2：增加key存在判断，修复KeyError
@@ -155,26 +155,23 @@ def load_data(file_bytes):
 st.title("📊 母婴电商销售数据可视化分析平台")
 uploaded_file = st.file_uploader("请上传Excel数据文件（clean_baby_data.xlsx）", type=["xlsx"])
 
-# 每次重新上传文件，重置筛选标记，清空图表
 if uploaded_file is not None:
     RAW, CLEAN, LOGS = load_data(uploaded_file.read())
     state.raw_df, state.clean_df, state.preprocess_log = RAW, CLEAN, LOGS
-    # 上传新文件后，强制重置筛选开关，必须手动点按钮才渲染图表
-    state.apply_filter_flag = False
 else:
     st.info("请先上传数据文件，否则无法继续分析！")
-    # 无文件时直接停止，不渲染任何图表
     st.stop()
 
 df = CLEAN
 
+# 日期默认取全量时间范围
 if state.start_date is None:
     state.start_date = df["日期"].min().date()
 if state.end_date is None:
     state.end_date = df["日期"].max().date()
 
 
-# 侧边栏
+# 侧边栏（已删除【应用筛选】按钮）
 with st.sidebar:
     st.header("📊 功能导航")
     nav = [
@@ -190,7 +187,6 @@ with st.sidebar:
     for txt, key in nav:
         if st.button(txt, use_container_width=True):
             state.page = key
-            # 切换页面也保持筛选状态不变
             st.rerun()
 
     st.divider()
@@ -206,27 +202,19 @@ with st.sidebar:
     st.divider()
     with st.expander("🔍 全局筛选", expanded=True):
         price_order = ["0-50元","50-100元","100-200元","200-500元","500元以上"]
+        # 默认全部选中，修改时自动触发筛选
         st.multiselect("金额区间", price_order, default=state.sel_price_range, key="price_key", on_change=on_filter_change)
         c1, c2 = st.columns(2)
         c1.date_input("起始日期", value=state.start_date, min_value=df["日期"].min().date(), max_value=df["日期"].max().date(), key="start_key", on_change=on_filter_change)
         c2.date_input("结束日期", value=state.end_date, min_value=df["日期"].min().date(), max_value=df["日期"].max().date(), key="end_key", on_change=on_filter_change)
+        # 省份默认空 = 不筛选全部省份，用户手动勾选才会限制省份
         st.multiselect("省份", sorted(df["省份标准化"].unique()), default=state.sel_prov, key="prov_key", on_change=on_filter_change)
         st.slider("支付金额范围", float(df["买家实际支付金额"].min()), float(df["买家实际支付金额"].max()), (state.min_p, state.max_p), key="slider_key", on_change=on_filter_change)
 
-        # 新增【应用筛选】按钮，只有点击后才会渲染筛选后的图表
-        if st.button("✅ 应用筛选条件", use_container_width=True):
-            state.apply_filter_flag = True
-            st.rerun()
 
-
-# ---------------------- 核心修改：没有点击【应用筛选】，不渲染任何图表 ----------------------
-if not state.apply_filter_flag:
-    st.info("👆 请先在左侧完成筛选条件设置，然后点击【应用筛选条件】按钮，图表才会同步加载数据！")
-    st.stop()
-
-
-# 筛选逻辑（仅在点击按钮后才执行）
+# 筛选逻辑
 if len(state.sel_prov) == 0:
+    # 省份为空：不限制省份，查询全部省份
     filter_df = df[
         (df["金额区间"].isin(state.sel_price_range)) &
         (df["日期"].dt.date >= state.start_date) &
@@ -235,6 +223,7 @@ if len(state.sel_prov) == 0:
         (df["买家实际支付金额"] <= state.max_p)
     ].copy()
 else:
+    # 手动勾选了省份，按选中省份筛选
     filter_df = df[
         (df["金额区间"].isin(state.sel_price_range)) &
         (df["日期"].dt.date >= state.start_date) &
