@@ -12,14 +12,24 @@ from streamlit.components.v1 import html
 import matplotlib.pyplot as plt
 import seaborn as sns
 from PIL import Image
-from statsmodels.tsa.arima.model import ARIMA
-from statsmodels.tsa.stattools import adfuller
+
+# 容错导入statsmodels，避免部署崩溃
+try:
+    from statsmodels.tsa.arima.model import ARIMA
+    from statsmodels.tsa.stattools import adfuller
+
+    HAS_STATSMODELS = True
+except ImportError:
+    HAS_STATSMODELS = False
+    ARIMA = None
+    adfuller = None
 import plotly.express as px
 import plotly.io as pio
 
 # 基础配置
 warnings.filterwarnings("ignore")
-plt.rcParams["font.sans-serif"] = ["SimHei", "DejaVu Sans"]  # 适配云端字体
+# 修复云端中文乱码
+plt.rcParams["font.sans-serif"] = ["DejaVu Sans"]
 plt.rcParams["axes.unicode_minus"] = False
 st.set_page_config(page_title="电商销售数据可视化分析平台", page_icon="📊", layout="wide")
 st.markdown("""
@@ -56,7 +66,7 @@ def init_session_state():
         "forecast_result": None,
         "forecast_target": "销售额",
         "forecast_period": 30,
-        "data_loaded": False  # 新增：标记数据是否加载
+        "data_loaded": False
     }
     for key, val in default_states.items():
         if key not in st.session_state:
@@ -170,9 +180,8 @@ def load_data(uploaded_file):
         logs.append(f"【缺失值】数值列填充0，文本列填充'未知'")
         df["district"] = df["district"].str.strip() if "district" in df.columns else "未知"
         df["省份标准化"] = df["district"]
-        logs.append(f"【省份标准化】直接沿用原始行政区名称，无文字追加")
+        logs.append(f"【省份标准化】直接沿用原始行政区名称")
 
-        # 兼容不同日期列名
         date_col = "Date" if "Date" in df.columns else ("日期" if "日期" in df.columns else None)
         if date_col:
             df["日期"] = pd.to_datetime(df[date_col], errors="coerce")
@@ -180,11 +189,10 @@ def load_data(uploaded_file):
             df = df.dropna(subset=["日期"])
             logs.append(f"【日期转换】删除无效日期{date_err}条，剩余{df.shape[0]}行")
         else:
-            st.warning("未检测到日期列（Date/日期），请检查数据格式！")
+            st.warning("未检测到日期列（Date/日期）")
             df["日期"] = pd.to_datetime("2024-01-01")
             logs.append(f"【日期转换】未找到日期列，默认填充2024-01-01")
 
-        # 列名映射兼容
         col_mapping = {
             "buy_mount": "购买数量",
             "Total": "买家实际支付金额",
@@ -213,15 +221,14 @@ def load_data(uploaded_file):
         return None, None, logs
 
 
-# ===== 新增：云端文件上传入口 =====
+# 侧边栏文件上传
 st.sidebar.header("📤 数据上传")
 uploaded_file = st.sidebar.file_uploader(
-    "上传Excel数据文件（clean_baby_data.xlsx）",
+    "上传Excel数据文件",
     type=["xlsx"],
-    help="请上传包含电商销售数据的Excel文件，字段需包含：Date/district/buy_mount/Total/user_id"
+    help="字段：Date、district、buy_mount、Total、user_id"
 )
 
-# 加载数据逻辑（适配云端上传）
 if uploaded_file is not None and not state.data_loaded:
     RAW, CLEAN, LOGS = load_data(uploaded_file)
     if RAW is not None and CLEAN is not None:
@@ -232,7 +239,6 @@ elif uploaded_file is None and not state.data_loaded:
     st.warning("请先在左侧侧边栏上传Excel数据文件！")
     st.stop()
 
-# 数据加载完成后执行后续逻辑
 df = state.clean_df
 if state.data_loaded:
     if state.start_date is None:
@@ -243,7 +249,6 @@ if state.data_loaded:
     if len(state.sel_prov) == 1 and state.sel_prov[0] == "所有省份":
         state.sel_prov = all_prov_list
 
-    # 滑块上限取数据最大值，下限固定12，不修改源数据
     if "买家实际支付金额" in df.columns:
         max_val = float(df["买家实际支付金额"].max())
     else:
@@ -267,7 +272,6 @@ if state.data_loaded:
             df["日期"].dt.date <= state.end_date,
             df["省份标准化"].isin(state.sel_prov),
         ]
-        # 金额筛选兼容
         if "买家实际支付金额" in df.columns:
             filter_conditions.extend([
                 df["买家实际支付金额"] >= state.min_p,
@@ -280,7 +284,6 @@ if state.data_loaded:
 
     filter_df = get_filtered_df()
 
-    # 侧边栏
     with st.sidebar:
         st.header("📊 功能导航")
         nav_items = [
@@ -319,8 +322,7 @@ if state.data_loaded:
                 file_name="筛选后销售数据.xlsx",
                 mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
                 use_container_width=True,
-                disabled=True,
-                help="暂无筛选数据可导出"
+                disabled=True
             )
         st.divider()
         with st.expander("🔍 全局筛选", expanded=True):
@@ -352,7 +354,6 @@ if state.data_loaded:
             else:
                 state.sel_prov = selected_prov
 
-            # 固定最小值=12，最大值取数据最大值，防止上下限相等报错
             if "买家实际支付金额" in df.columns:
                 st.slider(
                     "支付金额范围",
@@ -373,7 +374,6 @@ if state.data_loaded:
     prov_count = filter_df["省份标准化"].nunique() if not filter_df.empty else 0
     page = state.page
 
-    # 首页总览
     if page == "home":
         st.markdown("# 📊 电商销售数据可视化分析平台 | 综合总览")
         kpi_row = st.columns(4)
@@ -383,7 +383,6 @@ if state.data_loaded:
         kpi_row[3].metric("覆盖省份数量", f"{prov_count}")
         st.divider()
 
-        # 每日统计
         daily_stats = filter_df.groupby("日期").agg(
             订单量=("订单编号", "count") if "订单编号" in filter_df.columns else ("日期", "count"),
             销售额=("买家实际支付金额", "sum") if "买家实际支付金额" in filter_df.columns else ("日期", "count"),
@@ -392,7 +391,6 @@ if state.data_loaded:
         daily_stats_full = pd.merge(pd.DataFrame({"日期": pd.date_range(start_date, end_date)}), daily_stats,
                                     how="left").fillna(0)
 
-        # 小时统计
         hour_stats = filter_df.groupby("小时").agg(
             订单量=("买家实际支付金额", "count") if "买家实际支付金额" in filter_df.columns else ("小时", "count"),
             平均订单金额=(
@@ -401,7 +399,6 @@ if state.data_loaded:
         ).reset_index()
         hour_stats_full = pd.merge(pd.DataFrame({"小时": range(24)}), hour_stats, how="left").fillna(0)
 
-        # 省份统计
         prov_stats = filter_df.groupby("省份标准化").agg(
             订单量=("订单编号", "count") if "订单编号" in filter_df.columns else ("省份标准化", "count"),
             销售额=("买家实际支付金额", "sum") if "买家实际支付金额" in filter_df.columns else ("省份标准化", "count")
@@ -410,7 +407,6 @@ if state.data_loaded:
         top15_sales = prov_stats.sort_values(by="销售额", ascending=False).head(15).rename(
             columns={"省份标准化": "省份"})
 
-        # 星期统计
         week_stats = filter_df.groupby("星期名称")["订单编号"].count().reset_index(
             name="订单量") if "订单编号" in filter_df.columns else filter_df.groupby("星期名称")[
             "日期"].count().reset_index(name="订单量")
@@ -418,7 +414,6 @@ if state.data_loaded:
             {"周一": 0, "周二": 1, "周三": 2, "周四": 3, "周五": 4, "周六": 5, "周日": 6})
         week_stats = week_stats.sort_values("排序")
 
-        # 金额区间统计
         price_order = ["0-50元", "50-100元", "100-200元", "200-500元", "500元以上"]
         price_stats = filter_df["金额区间"].value_counts().reset_index()
         price_stats.columns = ["金额区间", "订单数"]
@@ -428,7 +423,6 @@ if state.data_loaded:
             lambda x: price_order.index(x) if x in price_order else 99)
         price_stats = price_stats.sort_values("sort_idx").reset_index(drop=True)
 
-        # 第一行图表
         r1 = st.columns(3)
         with r1[0]:
             l = Line(chart_init(420))
@@ -454,7 +448,6 @@ if state.data_loaded:
                 b.set_global_opts(**chart_config("分时订单柱状图", min_y=0, zoom=True))
             html(b.render_embed(), height=460)
 
-        # 第二行图表
         st.divider()
         r2 = st.columns(3)
         with r2[0]:
@@ -483,7 +476,6 @@ if state.data_loaded:
                 b.set_global_opts(**chart_config("星期订单分布", min_y=week_stats["订单量"].min(), zoom=False))
             html(b.render_embed(), height=420)
 
-        # 第三行图表
         st.divider()
         r3 = st.columns(3)
         with r3[0]:
@@ -525,7 +517,6 @@ if state.data_loaded:
     elif page == "stat_analysis":
         st.header("📈 基础探索性统计分析")
         if len(filter_df) > 0:
-            # 兼容字段存在性
             stat_cols = []
             if "购买数量" in filter_df.columns:
                 stat_cols.append("购买数量")
@@ -539,7 +530,6 @@ if state.data_loaded:
                 st.dataframe(desc_df, use_container_width=True, hide_index=True)
                 st.divider()
 
-                # 相关性热力图
                 corr_matrix = filter_df[stat_cols].corr(method="pearson")
                 fig, ax = plt.subplots(figsize=(7, 5), dpi=300)
                 sns.heatmap(corr_matrix, annot=True, cmap="Blues", vmin=-0.1, vmax=1, ax=ax, fmt=".3f", linewidths=0.5)
@@ -656,7 +646,6 @@ if state.data_loaded:
         st.header("🗺️ 全国省份地理销售详情")
         if len(filter_df) > 0:
             filter_df["年月"] = filter_df["日期"].dt.to_period("M")
-            # 分组计数并指定列名
             month_group = filter_df.groupby(["年月", "省份标准化"])["订单编号"].count().reset_index(
                 name="订单量") if "订单编号" in filter_df.columns else filter_df.groupby(["年月", "省份标准化"])[
                 "日期"].count().reset_index(name="订单量")
@@ -713,14 +702,17 @@ if state.data_loaded:
                     **chart_config("分时平均客单价", min_y=hour_stats_full["平均订单金额"].min(), zoom=True))
                 html(b.render_embed(), height=480)
 
-    # ARIMA预测模块
     elif page == "forecast":
         st.header("🔮 ARIMA 时间序列预测分析（加分模块）")
+        # 关键容错：没有库就直接提示，程序不会崩溃
+        if not HAS_STATSMODELS:
+            st.error("⚠️ statsmodels依赖库未安装，暂时无法使用预测功能！请更新requirements.txt后重新部署。")
+            st.stop()
+
         st.info("功能说明：基于每日销售数据，使用ARIMA时序模型做趋势预测")
         if len(filter_df) == 0:
             st.warning("⚠️ 当前筛选无数据，请调整左侧全局筛选条件！")
         else:
-            # 构建时序数据
             agg_dict = {}
             if "买家实际支付金额" in filter_df.columns:
                 agg_dict["销售额"] = ("买家实际支付金额", "sum")
