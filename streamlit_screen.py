@@ -46,7 +46,20 @@ state.setdefault("min_p", 0.0)
 state.setdefault("max_p", 99999.0)
 
 
+# ========== 方案2：增加key存在判断，修复KeyError ==========
 def on_filter_change():
+    # 先判断所有组件key是否存在，不存在直接退出，不执行赋值
+    if "price_key" not in state:
+        return
+    if "start_key" not in state:
+        return
+    if "end_key" not in state:
+        return
+    if "prov_key" not in state:
+        return
+    if "slider_key" not in state:
+        return
+
     state.sel_price_range = state["price_key"]
     state.start_date = state["start_key"]
     state.end_date = state["end_key"]
