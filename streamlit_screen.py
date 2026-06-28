@@ -12,8 +12,6 @@ from pyecharts.globals import ThemeType, CurrentConfig
 from streamlit.components.v1 import html
 import matplotlib.pyplot as plt
 import seaborn as sns
-from PIL import Image
-import os
 
 # ====================== 全局基础配置 ======================
 warnings.filterwarnings("ignore")
@@ -52,7 +50,6 @@ def init_session_state():
         "min_p": 0.0,
         "max_p": 99999.0,
         "filter_df_cache": None,
-        "cache_timestamp": None
     }
     for key, val in default_states.items():
         if key not in st.session_state:
@@ -76,7 +73,6 @@ def on_filter_change():
     if "slider_key" in st.session_state:
         state.min_p, state.max_p = st.session_state["slider_key"]
     state.filter_df_cache = None
-    state.cache_timestamp = datetime.now()
 
 def chart_init(height=480, theme=ThemeType.MACARONS):
     return opts.InitOpts(
@@ -216,7 +212,7 @@ def load_data(uploaded_file):
 
     return raw, df, logs
 
-# ====================== 侧边栏文件上传模块 ======================
+# ====================== 侧边栏文件上传 ======================
 with st.sidebar:
     st.header("📤 数据文件上传")
     uploaded_file = st.file_uploader(
@@ -225,27 +221,24 @@ with st.sidebar:
         help="上传包含母婴电商数据的Excel文件，字段需包含：Date、district、buy_mount、Total、user_id"
     )
 
-RAW = None
-CLEAN = None
-LOGS = None
-df = None
-filter_df = None
+# 优先从会话读取已清洗数据，解决刷新丢失问题
+df = state.clean_df
 all_prov_list = []
 
-# 加载数据并写入会话状态
+# 只有新上传文件时才执行加载
 if uploaded_file is not None:
     try:
         RAW, CLEAN, LOGS = load_data(uploaded_file)
-        state.raw_df, state.clean_df, state.preprocess_log = RAW, CLEAN, LOGS
-        st.success("✅ 文件加载成功！")
+        state.raw_df = RAW
+        state.clean_df = CLEAN
+        state.preprocess_log = LOGS
         df = CLEAN
+        st.success("✅ 文件加载成功！")
     except Exception as e:
         st.error(f"❌ 数据加载失败：{str(e)}")
-else:
-    st.info("⚠️ 请先在左侧上传Excel数据文件")
-    df = state.clean_df
 
-# 初始化筛选条件与缓存
+# 只要df不为空，就初始化筛选参数（刷新页面也能执行）
+filter_df = None
 if df is not None and not df.empty:
     if state.start_date is None:
         state.start_date = df["日期"].min().date()
@@ -629,7 +622,7 @@ elif page == "sale_detail":
                 b.reversal_axis()
                 b.set_global_opts(**chart_config("TOP15省份销售额", min_x=0, zoom=False))
             html(b.render_embed(), height=520)
-            st.download_button("📥 下载HTML图表", data=l.render_embed(), file_name="TOP15省份销售额.html", mime="text/html", use_container_width=True)
+            st.download_button("📥 下载HTML图表", data=b.render_embed(), file_name="TOP15省份销售额.html", mime="text/html", use_container_width=True)
 
         top15_sales_ranked = top15_sales.reset_index(drop=True)
         top15_sales_ranked.insert(0, "排名", range(1, len(top15_sales_ranked) + 1))
