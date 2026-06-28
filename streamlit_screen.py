@@ -11,10 +11,11 @@ from streamlit.components.v1 import html
 import matplotlib.pyplot as plt
 import seaborn as sns
 
-# ====================== 双保险修复matplotlib中文乱码 ======================
+# 屏蔽警告
 warnings.filterwarnings("ignore")
-plt.rcParams['font.sans-serif'] = ['SimHei', 'WenQuanYi Zen Hei', 'DejaVu Sans']
-plt.rcParams['axes.unicode_minus'] = False
+
+# 【彻底解决乱码：不使用中文字体，坐标轴全部使用英文，不再依赖系统黑体】
+plt.rcParams["axes.unicode_minus"] = False
 
 # 页面基础配置
 st.set_page_config(
@@ -41,15 +42,14 @@ state.setdefault("end_date", None)
 state.setdefault("sel_prov", [])
 state.setdefault("min_p", None)
 state.setdefault("max_p", None)
-# 严格开关：筛选全部初始化完成才允许绘图
-state.setdefault("ready_to_draw", False)
+# 渲染开关：必须等待筛选条件初始化完成才绘图
+state.setdefault("is_init_finished", False)
 
 
-# 筛选回调，增加key存在判断
 def on_filter_change():
     key_list = ["price_key", "start_key", "end_key", "prov_key", "slider_key"]
     for k in key_list:
-        if k not in st.session_state:
+        if k not in state:
             return
     state.sel_price_range = state["price_key"]
     state.start_date = state["start_key"]
@@ -147,22 +147,22 @@ if uploaded_file is not None:
     state.raw_df, state.clean_df, state.preprocess_log = RAW, CLEAN, LOGS
     df = CLEAN
 
-    # 一次性把所有筛选变量初始化完成
+    # 一次性把所有筛选参数全部初始化完毕
     state.min_p = float(df["买家实际支付金额"].min())
     state.max_p = float(df["买家实际支付金额"].max())
     state.start_date = df["日期"].min().date()
     state.end_date = df["日期"].max().date()
     state.sel_prov = []
-    state.sel_price_range = ["0-50元","50-100元","100-200元","200-500元","500元以上"]
-    # 全部初始化完毕，才打开绘图开关
-    state.ready_to_draw = True
+    state.sel_price_range = ["0-50元","50-100元","200-500元","100-200元","500元以上"]
+    # 全部初始化完成后，才打开绘图开关
+    state.is_init_finished = True
 
 else:
     st.info("请先上传数据文件，否则无法继续分析！")
     st.stop()
 
 
-# 侧边栏筛选区
+# 侧边栏筛选
 with st.sidebar:
     st.header("📊 功能导航")
     nav = [
@@ -211,13 +211,13 @@ with st.sidebar:
         )
 
 
-# ========== 关键拦截：未完成初始化就停止渲染 ==========
-if not state.ready_to_draw:
-    st.info("⏳ 正在同步所有筛选条件，请等待初始化完成...")
+# 拦截：未初始化完成，直接停止渲染
+if not state.is_init_finished:
+    st.info("⏳ 筛选条件正在初始化，请等待完成...")
     st.stop()
 
 
-# 筛选逻辑（省份为空=全部省份，多条件同步一起计算）
+# 筛选逻辑（省份为空=全部省份，多条件同步生效）
 if len(state.sel_prov) == 0:
     filter_df = df[
         (df["金额区间"].isin(state.sel_price_range)) &
@@ -362,12 +362,12 @@ elif page == "stat_analysis":
     if len(filter_df) > 0:
         st.dataframe(filter_df[["购买数量","买家实际支付金额","小时"]].describe(), use_container_width=True, hide_index=True)
         st.divider()
-        corr_cols = ["购买数量", "买家实际支付金额", "小时"]
-        corr_matrix = filter_df[corr_cols].corr(method="pearson")
+        corr_cols = ["buy_count", "payment", "hour"]
+        corr_matrix = filter_df[["购买数量","买家实际支付金额","小时"]].corr(method="pearson")
         fig, ax = plt.subplots(figsize=(7, 5), dpi=300)
         sns.heatmap(corr_matrix, annot=True, cmap="Blues", vmin=-0.1, vmax=1, ax=ax)
-        ax.set_title("皮尔逊相关系数热力图", fontsize=16)
-        # 只用字段名，避免手动中文标签乱码
+        # 【关键修复：坐标轴使用英文，彻底消除中文方框乱码，不再依赖中文字体】
+        ax.set_title("Correlation Coefficient Heatmap")
         ax.set_xticklabels(corr_cols)
         ax.set_yticklabels(corr_cols)
         plt.tight_layout()
