@@ -13,15 +13,11 @@ import seaborn as sns
 from PIL import Image
 import os
 
-# ====================== 彻底解决中文乱码 ======================
+# ====================== 解决中文乱码（仅保留matplotlib配置，删除pyecharts全局静态方法） ======================
 warnings.filterwarnings("ignore")
 # matplotlib 中文字体配置，兼容Windows + Linux云端
 plt.rcParams["font.sans-serif"] = ["SimHei", "WenQuanYi Zen Hei", "DejaVu Sans"]
 plt.rcParams["axes.unicode_minus"] = False
-# pyecharts全局字体
-opts.GlobalOpts.set_global_opts(
-    textstyle_opts=opts.TextStyleOpts(font_family="SimHei, WenQuanYi Zen Hei")
-)
 
 st.set_page_config(page_title="母婴电商销售数据可视化分析平台", page_icon="📊", layout="wide")
 
@@ -82,7 +78,7 @@ def on_filter_change():
     state.cache_timestamp = datetime.now()
 
 
-# 图表初始化
+# 图表初始化（给每个图表单独设置字体，替代全局设置）
 def chart_init(height=480, theme=ThemeType.MACARONS):
     return opts.InitOpts(
         width="100%",
@@ -93,35 +89,35 @@ def chart_init(height=480, theme=ThemeType.MACARONS):
     )
 
 
-# 图表全局配置
+# 图表全局配置（在标题、图例里单独指定字体，解决中文乱码）
 def chart_config(title_name, min_y=None, max_y=None, min_x=None, max_x=None, zoom=True):
     cfg = {
         "title_opts": opts.TitleOpts(
             title=title_name,
             pos_left="center",
-            title_textstyle_opts=opts.TextStyleOpts(font_size=16, font_weight="bold")
+            title_textstyle_opts=opts.TextStyleOpts(font_size=16, font_weight="bold", font_family="SimHei, WenQuanYi Zen Hei")
         ),
         "xaxis_opts": opts.AxisOpts(
-            axislabel_opts=opts.LabelOpts(font_size=12, rotate=15),
+            axislabel_opts=opts.LabelOpts(font_size=12, rotate=15, font_family="SimHei, WenQuanYi Zen Hei"),
             splitline_opts=opts.SplitLineOpts(is_show=False),
             min_=min_x,
             max_=max_x
         ),
         "yaxis_opts": opts.AxisOpts(
-            axislabel_opts=opts.LabelOpts(font_size=12),
+            axislabel_opts=opts.LabelOpts(font_size=12, font_family="SimHei, WenQuanYi Zen Hei"),
             splitline_opts=opts.SplitLineOpts(is_show=True, linestyle_opts=opts.LineStyleOpts(opacity=0.3)),
             min_=min_y,
             max_=max_y
         ),
         "legend_opts": opts.LegendOpts(
             pos_bottom="2%",
-            textstyle_opts=opts.TextStyleOpts(font_size=12),
+            textstyle_opts=opts.TextStyleOpts(font_size=12, font_family="SimHei, WenQuanYi Zen Hei"),
             orient="horizontal"
         ),
         "tooltip_opts": opts.TooltipOpts(
             trigger="axis",
             axis_pointer_type="shadow",
-            textstyle_opts=opts.TextStyleOpts(font_size=11)
+            textstyle_opts=opts.TextStyleOpts(font_size=11, font_family="SimHei, WenQuanYi Zen Hei")
         ),
         "toolbox_opts": opts.ToolboxOpts(
             is_show=True,
@@ -518,7 +514,8 @@ if page == "home":
             map_data = list(zip(map_df["省份标准化"], map_df["订单量"].astype(int)))
             m.add("订单量分布", map_data, maptype="china", is_map_symbol_show=False)
             cfg = chart_config("", zoom=False)
-            cfg["title_opts"] = opts.TitleOpts(title="全国省份订单地图", pos_left="center")
+            cfg["title_opts"] = opts.TitleOpts(title="全国省份订单地图", pos_left="center",
+                                               title_textstyle_opts=opts.TextStyleOpts(font_size=16, font_weight="bold", font_family="SimHei, WenQuanYi Zen Hei"))
             if len(map_df) > 0:
                 max_val = int(map_df["订单量"].max())
                 m.set_global_opts(
@@ -536,7 +533,7 @@ if page == "home":
         if len(top15_sales):
             b.add_xaxis(top15_sales["省份"].tolist())
             b.add_yaxis("销售额", top15_sales["销售额"].tolist(), bar_width="70%",
-                        label_opts=opts.LabelOpts(is_show=True, position="right"))
+                        label_opts=opts.LabelOpts(is_show=True, position="right", font_family="SimHei, WenQuanYi Zen Hei"))
             b.reversal_axis()
             b.set_global_opts(**chart_config("TOP15省份销售额横向柱状图", min_x=0, zoom=False))
         html(b.render_embed(), height=520)
@@ -547,7 +544,7 @@ if page == "home":
         b = Bar(chart_init(420))
         if len(week_stats):
             b.add_xaxis(week_stats["星期名称"].tolist())
-            b.add_yaxis("订单量", week_stats["订单量"].tolist(), label_opts=opts.LabelOpts(is_show=True))
+            b.add_yaxis("订单量", week_stats["订单量"].tolist(), label_opts=opts.LabelOpts(is_show=True, font_family="SimHei, WenQuanYi Zen Hei"))
             b.set_global_opts(**chart_config("星期订单分布", min_y=week_stats["订单量"].min(), zoom=False))
         html(b.render_embed(), height=420)
         st.download_button("📥 下载为HTML（可编辑）", data=b.render_embed(), file_name="星期订单分布.html",
@@ -683,7 +680,7 @@ elif page == "sale_detail":
             b = Bar(chart_init(520))
             b.add_xaxis(top15_sales["省份"].tolist())
             b.add_yaxis("省份销售额", top15_sales["销售额"].tolist(), bar_width="70%",
-                        label_opts=opts.LabelOpts(is_show=True, position="right"))
+                        label_opts=opts.LabelOpts(is_show=True, position="right", font_family="SimHei, WenQuanYi Zen Hei"))
             b.reversal_axis()
             b.set_global_opts(**chart_config("TOP15省份销售额", min_x=0, zoom=False))
             html(b.render_embed(), height=520)
@@ -729,7 +726,7 @@ elif page == "order_detail":
         with col2:
             b = Bar(chart_init(480))
             b.add_xaxis(week_stats["星期名称"].tolist())
-            b.add_yaxis("周订单量", week_stats["订单量"].tolist(), label_opts=opts.LabelOpts(is_show=True))
+            b.add_yaxis("周订单量", week_stats["订单量"].tolist(), label_opts=opts.LabelOpts(is_show=True, font_family="SimHei, WenQuanYi Zen Hei"))
             b.set_global_opts(**chart_config("星期订单分布", min_y=week_stats["订单量"].min(), zoom=False))
             html(b.render_embed(), height=480)
             st.download_button("📥 下载为HTML（可编辑）", data=b.render_embed(), file_name="星期订单分布.html",
@@ -786,7 +783,7 @@ elif page == "province_detail":
             is_auto_play=False,
             is_loop_play=False,
             pos_bottom="5%",
-            label_opts=opts.LabelOpts(font_size=12)
+            label_opts=opts.LabelOpts(font_size=12, font_family="SimHei, WenQuanYi Zen Hei")
         )
 
         exclude_area = ["台湾省", "香港特别行政区", "澳门特别行政区"]
@@ -841,7 +838,7 @@ elif page == "hour_detail":
             b = Bar(chart_init(480))
             b.add_xaxis([str(i) for i in range(24)])
             b.add_yaxis("每小时订单", hour_stats_full["订单量"].tolist(), bar_width="60%",
-                        label_opts=opts.LabelOpts(is_show=True, font_size=9, rotate=30))
+                        label_opts=opts.LabelOpts(is_show=True, font_size=9, rotate=30, font_family="SimHei, WenQuanYi Zen Hei"))
             b.set_global_opts(**chart_config("分时订单量", min_y=0, zoom=True))
             html(b.render_embed(), height=480)
             st.download_button("📥 下载为HTML（可编辑）", data=b.render_embed(), file_name="分时订单量.html",
@@ -851,7 +848,7 @@ elif page == "hour_detail":
             b = Bar(chart_init(480))
             b.add_xaxis([str(i) for i in range(24)])
             b.add_yaxis("每小时平均客单价", hour_stats_full["平均订单金额"].tolist(),
-                        label_opts=opts.LabelOpts(font_size=10))
+                        label_opts=opts.LabelOpts(font_size=10, font_family="SimHei, WenQuanYi Zen Hei"))
             b.set_global_opts(**chart_config("分时平均客单价", min_y=hour_stats_full["平均订单金额"].min(), zoom=True))
             html(b.render_embed(), height=480)
             st.download_button("📥 下载为HTML（可编辑）", data=b.render_embed(), file_name="分时平均客单价.html",
