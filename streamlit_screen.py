@@ -592,23 +592,27 @@ elif page == "stat_analysis":
     else:
         st.header("📈 基础探索性统计分析")
 
-        # 自动筛选出方差>0的有效数值字段，避免字段被自动删除
+        # 1. 只选取数值型字段，自动过滤常数列
         numeric_cols = filter_df.select_dtypes(include=[np.number]).columns
         valid_cols = []
         for col in numeric_cols:
             if filter_df[col].var() > 1e-6:
                 valid_cols.append(col)
 
-        st.subheader("描述性统计")
+        # 描述统计表
         desc_df = filter_df[valid_cols].describe().round(3)
-        st.dataframe(desc_df, use_container_width=True)
+        st.dataframe(desc_df, use_container_width=True, hide_index=False)
         st.divider()
 
         # 计算皮尔逊相关矩阵
         corr_matrix = filter_df[valid_cols].corr(method="pearson")
 
-        # 绘制相关性热力图
-        fig, ax = plt.subplots(figsize=(8, 6), dpi=300)
+        # 2. 【关键】在绘图前重新强制设置字体，解决方框乱码
+        import matplotlib.pyplot as plt
+        plt.rcParams['font.sans-serif'] = ['WenQuanYi Zen Hei', 'SimHei', 'DejaVu Sans']
+        plt.rcParams['axes.unicode_minus'] = False  # 解决负号显示为方框
+
+        fig, ax = plt.subplots(figsize=(10, 8), dpi=300)
         sns.heatmap(
             corr_matrix,
             annot=True,
@@ -617,18 +621,20 @@ elif page == "stat_analysis":
             vmin=-1,
             vmax=1,
             square=True,
-            linewidths=0.6,
-            linecolor="#ffffff",
-            annot_kws={"fontsize": 12, "color": "black"},
-            cbar_kws={"shrink": 0.8, "label": "皮尔逊相关系数"},
+            linewidths=0.5,
+            linecolor="white",
+            annot_kws={"fontsize": 10, "color": "black"},
+            cbar_kws={"shrink": 0.85, "label": "皮尔逊相关系数"},
             ax=ax
         )
-        ax.set_title("数值字段皮尔逊相关性热力图", fontsize=16, pad=20)
-        ax.set_xticklabels(corr_matrix.columns, rotation=0, ha="center")
-        ax.set_yticklabels(corr_matrix.columns, rotation=0, va="center")
+
+        ax.set_title("数值字段皮尔逊相关性热力图", fontsize=16, pad=20, fontweight="bold")
+        ax.set_xticklabels(corr_matrix.columns, rotation=30, ha="right", fontsize=11)
+        ax.set_yticklabels(corr_matrix.columns, rotation=0, va="center", fontsize=11)
+
         plt.tight_layout()
 
-        # 输出图片
+        # 导出图片
         buf = io.BytesIO()
         fig.savefig(buf, format="png", bbox_inches="tight", dpi=300)
         buf.seek(0)
