@@ -11,10 +11,10 @@ from streamlit.components.v1 import html
 import matplotlib.pyplot as plt
 import seaborn as sns
 
-# ---------------------- 解决matplotlib中文乱码 ----------------------
-plt.rcParams["font.sans-serif"] = ["WenQuanYi Zen Hei"]
-plt.rcParams["axes.unicode_minus"] = False
+# ====================== 双保险修复matplotlib中文乱码 ======================
 warnings.filterwarnings("ignore")
+plt.rcParams['font.sans-serif'] = ['SimHei', 'WenQuanYi Zen Hei', 'DejaVu Sans']
+plt.rcParams['axes.unicode_minus'] = False
 
 # 页面基础配置
 st.set_page_config(
@@ -23,14 +23,13 @@ st.set_page_config(
     layout="wide"
 )
 
-# 样式
 st.markdown("""
 <style>
 iframe {width:100% !important;}
 </style>
 """, unsafe_allow_html=True)
 
-# 会话状态
+# 会话状态初始化
 state = st.session_state
 state.setdefault("page", "home")
 state.setdefault("raw_df", None)
@@ -42,15 +41,15 @@ state.setdefault("end_date", None)
 state.setdefault("sel_prov", [])
 state.setdefault("min_p", None)
 state.setdefault("max_p", None)
-# 新增标记：必须等待筛选条件加载完成再渲染图表
-state.setdefault("render_chart_flag", False)
+# 严格开关：筛选全部初始化完成才允许绘图
+state.setdefault("ready_to_draw", False)
 
 
-# 筛选回调（增加key判断，防止KeyError）
+# 筛选回调，增加key存在判断
 def on_filter_change():
-    keys_list = ["price_key","start_key","end_key","prov_key","slider_key"]
-    for k in keys_list:
-        if k not in state:
+    key_list = ["price_key", "start_key", "end_key", "prov_key", "slider_key"]
+    for k in key_list:
+        if k not in st.session_state:
             return
     state.sel_price_range = state["price_key"]
     state.start_date = state["start_key"]
@@ -138,7 +137,7 @@ def load_data(file_bytes):
     return raw, df, logs
 
 
-# 文件上传
+# 主程序入口
 st.title("📊 母婴电商销售数据可视化分析平台")
 uploaded_file = st.file_uploader("请上传Excel数据文件（clean_baby_data.xlsx）", type=["xlsx"])
 
@@ -148,22 +147,22 @@ if uploaded_file is not None:
     state.raw_df, state.clean_df, state.preprocess_log = RAW, CLEAN, LOGS
     df = CLEAN
 
-    # 每次上传文件，统一初始化所有筛选值，保证同步
+    # 一次性把所有筛选变量初始化完成
     state.min_p = float(df["买家实际支付金额"].min())
     state.max_p = float(df["买家实际支付金额"].max())
     state.start_date = df["日期"].min().date()
     state.end_date = df["日期"].max().date()
     state.sel_prov = []
     state.sel_price_range = ["0-50元","50-100元","100-200元","200-500元","500元以上"]
-    # 初始化完成后，才允许渲染图表
-    state.render_chart_flag = True
+    # 全部初始化完毕，才打开绘图开关
+    state.ready_to_draw = True
 
 else:
     st.info("请先上传数据文件，否则无法继续分析！")
     st.stop()
 
 
-# 侧边栏筛选
+# 侧边栏筛选区
 with st.sidebar:
     st.header("📊 功能导航")
     nav = [
@@ -212,13 +211,13 @@ with st.sidebar:
         )
 
 
-# ---------------------- 核心：未初始化完成不渲染图表 ----------------------
-if not state.render_chart_flag:
-    st.info("⏳ 筛选条件正在初始化，请稍候...")
+# ========== 关键拦截：未完成初始化就停止渲染 ==========
+if not state.ready_to_draw:
+    st.info("⏳ 正在同步所有筛选条件，请等待初始化完成...")
     st.stop()
 
 
-# 筛选逻辑（省份为空 = 全部省份，四项条件同时生效）
+# 筛选逻辑（省份为空=全部省份，多条件同步一起计算）
 if len(state.sel_prov) == 0:
     filter_df = df[
         (df["金额区间"].isin(state.sel_price_range)) &
@@ -368,6 +367,7 @@ elif page == "stat_analysis":
         fig, ax = plt.subplots(figsize=(7, 5), dpi=300)
         sns.heatmap(corr_matrix, annot=True, cmap="Blues", vmin=-0.1, vmax=1, ax=ax)
         ax.set_title("皮尔逊相关系数热力图", fontsize=16)
+        # 只用字段名，避免手动中文标签乱码
         ax.set_xticklabels(corr_cols)
         ax.set_yticklabels(corr_cols)
         plt.tight_layout()
