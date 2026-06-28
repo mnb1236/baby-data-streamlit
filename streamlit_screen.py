@@ -11,12 +11,10 @@ from streamlit.components.v1 import html
 import matplotlib.pyplot as plt
 import seaborn as sns
 
-# 屏蔽警告
-warnings.filterwarnings("ignore")
-
-# 解决matplotlib中文乱码（云端Linux兼容）
-plt.rcParams["font.sans-serif"] = ["WenQuanYi Zen Hei", "DejaVu Sans"]
+# ---------------------- 解决matplotlib中文乱码 ----------------------
+plt.rcParams["font.sans-serif"] = ["WenQuanYi Zen Hei"]
 plt.rcParams["axes.unicode_minus"] = False
+warnings.filterwarnings("ignore")
 
 # 页面基础配置
 st.set_page_config(
@@ -25,41 +23,35 @@ st.set_page_config(
     layout="wide"
 )
 
-# 仅保留最小样式，彻底规避DOM节点冲突
+# 样式
 st.markdown("""
 <style>
 iframe {width:100% !important;}
 </style>
 """, unsafe_allow_html=True)
 
-# 会话状态初始化
+# 会话状态
 state = st.session_state
 state.setdefault("page", "home")
 state.setdefault("raw_df", None)
 state.setdefault("clean_df", None)
 state.setdefault("preprocess_log", [])
-# 默认选中全部金额区间
 state.setdefault("sel_price_range", ["0-50元","50-100元","100-200元","200-500元","500元以上"])
 state.setdefault("start_date", None)
 state.setdefault("end_date", None)
-# 省份默认空 = 全部省份
 state.setdefault("sel_prov", [])
 state.setdefault("min_p", None)
 state.setdefault("max_p", None)
+# 新增标记：必须等待筛选条件加载完成再渲染图表
+state.setdefault("render_chart_flag", False)
 
 
-# 方案2：增加key存在判断，修复KeyError
+# 筛选回调（增加key判断，防止KeyError）
 def on_filter_change():
-    if "price_key" not in state:
-        return
-    if "start_key" not in state:
-        return
-    if "end_key" not in state:
-        return
-    if "prov_key" not in state:
-        return
-    if "slider_key" not in state:
-        return
+    keys_list = ["price_key","start_key","end_key","prov_key","slider_key"]
+    for k in keys_list:
+        if k not in state:
+            return
     state.sel_price_range = state["price_key"]
     state.start_date = state["start_key"]
     state.end_date = state["end_key"]
@@ -68,12 +60,7 @@ def on_filter_change():
 
 
 def chart_init(height=480):
-    return opts.InitOpts(
-        width="100%",
-        height=f"{height}px",
-        bg_color="#ffffff",
-        theme=ThemeType.MACARONS
-    )
+    return opts.InitOpts(width="100%", height=f"{height}px", bg_color="#ffffff", theme=ThemeType.MACARONS)
 
 
 def chart_config(title_name, min_y=0, min_x=None, zoom=True):
@@ -151,7 +138,7 @@ def load_data(file_bytes):
     return raw, df, logs
 
 
-# 云端文件上传入口
+# 文件上传
 st.title("📊 母婴电商销售数据可视化分析平台")
 uploaded_file = st.file_uploader("请上传Excel数据文件（clean_baby_data.xlsx）", type=["xlsx"])
 
@@ -161,22 +148,22 @@ if uploaded_file is not None:
     state.raw_df, state.clean_df, state.preprocess_log = RAW, CLEAN, LOGS
     df = CLEAN
 
-    # 每次上传新文件，自动把金额滑块重置为数据集真实最小、最大值
-    real_min = float(df["买家实际支付金额"].min())
-    real_max = float(df["买家实际支付金额"].max())
-    state.min_p = real_min
-    state.max_p = real_max
-
-    # 日期自动重置为数据集完整区间
+    # 每次上传文件，统一初始化所有筛选值，保证同步
+    state.min_p = float(df["买家实际支付金额"].min())
+    state.max_p = float(df["买家实际支付金额"].max())
     state.start_date = df["日期"].min().date()
     state.end_date = df["日期"].max().date()
+    state.sel_prov = []
+    state.sel_price_range = ["0-50元","50-100元","100-200元","200-500元","500元以上"]
+    # 初始化完成后，才允许渲染图表
+    state.render_chart_flag = True
 
 else:
     st.info("请先上传数据文件，否则无法继续分析！")
     st.stop()
 
 
-# 侧边栏
+# 侧边栏筛选
 with st.sidebar:
     st.header("📊 功能导航")
     nav = [
@@ -213,7 +200,6 @@ with st.sidebar:
         c2.date_input("结束日期", value=state.end_date, min_value=df["日期"].min().date(), max_value=df["日期"].max().date(), key="end_key", on_change=on_filter_change)
         st.multiselect("省份", sorted(df["省份标准化"].unique()), default=state.sel_prov, key="prov_key", on_change=on_filter_change)
 
-        # 滑块自动绑定当前数据集真实极值
         slider_min = float(df["买家实际支付金额"].min())
         slider_max = float(df["买家实际支付金额"].max())
         st.slider(
@@ -226,7 +212,13 @@ with st.sidebar:
         )
 
 
-# 筛选逻辑（省份为空=查询全部省份，和其他筛选条件同步生效）
+# ---------------------- 核心：未初始化完成不渲染图表 ----------------------
+if not state.render_chart_flag:
+    st.info("⏳ 筛选条件正在初始化，请稍候...")
+    st.stop()
+
+
+# 筛选逻辑（省份为空 = 全部省份，四项条件同时生效）
 if len(state.sel_prov) == 0:
     filter_df = df[
         (df["金额区间"].isin(state.sel_price_range)) &
