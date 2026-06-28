@@ -26,11 +26,8 @@ except ImportError:
 import plotly.express as px
 import plotly.io as pio
 
-# ========== 只修复热力图乱码，其他页面保持中文 ==========
+# 【重点】这里只关闭警告，不修改全局字体！！！全局字体不再设置，只在绘图块临时切换
 warnings.filterwarnings("ignore")
-# matplotlib强制使用云端自带英文字体，只解决热力图方块，不影响pyecharts中文
-plt.rcParams["font.sans-serif"] = ["DejaVu Sans"]
-plt.rcParams["axes.unicode_minus"] = False
 
 st.set_page_config(page_title="电商销售数据可视化分析平台", page_icon="📊", layout="wide")
 st.markdown("""
@@ -532,15 +529,34 @@ if state.data_loaded:
                 st.divider()
 
                 corr_matrix = filter_df[stat_cols].corr(method="pearson")
+
+                # ========== 关键改动：只在画这张图时临时切换字体，画完立刻恢复 ==========
+                # 保存原来的字体设置
+                old_font = plt.rcParams["font.sans-serif"].copy()
+                old_unicode = plt.rcParams["axes.unicode_minus"]
+
+                # 临时切换为英文字体，只用于这张图
+                plt.rcParams["font.sans-serif"] = ["DejaVu Sans"]
+                plt.rcParams["axes.unicode_minus"] = False
+
                 fig, ax = plt.subplots(figsize=(7, 5), dpi=300)
                 sns.heatmap(corr_matrix, annot=True, cmap="Blues", vmin=-0.1, vmax=1, ax=ax, fmt=".3f", linewidths=0.5)
-                ax.set_title("皮尔逊相关系数热力图", fontsize=14, pad=14)
+                ax.set_title("Pearson Correlation Heatmap", fontsize=14, pad=14)
+                # 坐标轴文字直接改为英文，彻底杜绝中文方框
+                ax.set_xticklabels(["Purchase Qty", "Payment Amt", "Hour"])
+                ax.set_yticklabels(["Purchase Qty", "Payment Amt", "Hour"])
+
                 plt.tight_layout()
                 buf = io.BytesIO()
                 plt.savefig(buf, format="png", bbox_inches="tight", dpi=300)
                 buf.seek(0)
                 st.image(buf, use_container_width=True)
                 plt.close()
+
+                # 【核心】绘图结束，立刻恢复回原来的配置！其他页面不受任何影响
+                plt.rcParams["font.sans-serif"] = old_font
+                plt.rcParams["axes.unicode_minus"] = old_unicode
+
             else:
                 st.warning("无可用的数值列进行统计分析！")
 
